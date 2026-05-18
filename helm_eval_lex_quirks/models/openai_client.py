@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 
 import openai
 
-from helm_eval.config import MODEL_CONFIGS, ModelConfig
+from helm_eval_lex_quirks.config import MODEL_CONFIGS, ModelConfig
 
 logger = logging.getLogger(__name__)
 

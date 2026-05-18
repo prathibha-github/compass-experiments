@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 from typing import Dict
 
-from helm_eval.runner import EvalResults
+from helm_eval_lex_quirks.runner import EvalResults
 
 
 def _summary_dict(res: EvalResults) -> dict:
@@ -32,6 +32,8 @@ def _summary_dict(res: EvalResults) -> dict:
 
     if res.quirk_results:
         out["quirk_detection"] = res.quirk_results[:15]
+    if res.linkedin_results:
+        out["linkedin_style"] = res.linkedin_results
     return out
 
 
@@ -117,6 +119,26 @@ def format_table(results_by_model: Dict[str, EvalResults]) -> str:
             cts = q["counts"]
             cnt = "/".join(str(cts.get(c, 0)) for c in ("neutral", "playful", "professional", "friendly"))
             lines.append(f"  {q['word']:<22}  {q['lift']:>6.2f}  {q['dominant_condition']:<22}  {cnt}")
+
+    # ── LinkedIn style detection ──────────────────────────────────────────────
+    for m, res in results_by_model.items():
+        if not res.linkedin_results:
+            continue
+        lines += [
+            "",
+            sep,
+            f"  LINKEDIN STYLE DETECTION — {m}",
+            "  Emoji prevalence and LinkedIn-speak tics across system prompt conditions",
+            "-" * 96,
+        ]
+        analysis = res.linkedin_results.get("analysis", {})
+        for cond, stats in analysis.items():
+            lines.append(
+                f"  {cond:<20}  "
+                f"emoji: {stats['pct_with_emoji']:>5.1f}%  "
+                f"excessive: {stats['pct_excessive_emoji']:>5.1f}%  "
+                f"phrases: {stats['mean_phrase_hits']:>4.2f}"
+            )
 
     lines.append(sep)
     return "\n".join(lines)

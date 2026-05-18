@@ -6,18 +6,22 @@ from typing import Dict, List, Optional
 
 from tqdm import tqdm
 
-from helm_eval.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig
-from helm_eval.metrics.accuracy import extract_mc_answer, multiple_choice_accuracy
-from helm_eval.metrics.calibration import compute_ece, extract_choice_probs
-from helm_eval.metrics.quirk_detection import QUIRK_PROMPTS, SYSTEM_PROMPTS, find_quirks
-from helm_eval.metrics.robustness import compute_robustness_score, inject_typos
-from helm_eval.models.openai_client import OpenAIClient
-from helm_eval.scenarios.base import Instance, Scenario
-from helm_eval.scenarios.bbq import BBQScenario
-from helm_eval.scenarios.boolq import BoolQScenario
-from helm_eval.scenarios.hellaswag import HellaSwagScenario
-from helm_eval.scenarios.mmlu import MMLUScenario
-from helm_eval.scenarios.truthfulqa import TruthfulQAScenario
+from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig
+from helm_eval_lex_quirks.metrics.accuracy import extract_mc_answer, multiple_choice_accuracy
+from helm_eval_lex_quirks.metrics.calibration import compute_ece, extract_choice_probs
+from helm_eval_lex_quirks.metrics.quirk_detection import QUIRK_PROMPTS, SYSTEM_PROMPTS, find_quirks
+from helm_eval_lex_quirks.metrics.linkedin_style import (
+    ANNOUNCEMENT_PROMPTS, SYSTEM_PROMPTS as LINKEDIN_PROMPTS,
+    analyze_outputs, compute_uplift, count_emojis, count_linkedin_phrases
+)
+from helm_eval_lex_quirks.metrics.robustness import compute_robustness_score, inject_typos
+from helm_eval_lex_quirks.models.openai_client import OpenAIClient
+from helm_eval_lex_quirks.scenarios.base import Instance, Scenario
+from helm_eval_lex_quirks.scenarios.bbq import BBQScenario
+from helm_eval_lex_quirks.scenarios.boolq import BoolQScenario
+from helm_eval_lex_quirks.scenarios.hellaswag import HellaSwagScenario
+from helm_eval_lex_quirks.scenarios.mmlu import MMLUScenario
+from helm_eval_lex_quirks.scenarios.truthfulqa import TruthfulQAScenario
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +55,7 @@ class EvalResults:
     model:            str
     scenario_results: Dict[str, ScenarioResults] = field(default_factory=dict)
     quirk_results:    Optional[List[dict]]        = None
+    linkedin_results: Optional[dict]              = None
     token_usage:      dict                        = field(default_factory=dict)
     total_cost_usd:   float                       = 0.0
 
@@ -75,6 +80,9 @@ class EvalRunner:
             if self.config.run_quirk_detection:
                 n_quirk = len(QUIRK_PROMPTS) * len(SYSTEM_PROMPTS)
                 total  += client.estimate_cost(["x" * 400] * n_quirk, max_tokens=150)
+            if self.config.run_linkedin_style:
+                n_linkedin = len(ANNOUNCEMENT_PROMPTS) * len(LINKEDIN_PROMPTS) * self.config.linkedin_samples
+                total += client.estimate_cost(["x" * 100] * n_linkedin, max_tokens=200)
             estimates[model_name] = round(total, 4)
         return estimates
 
@@ -118,31 +126,36 @@ class EvalRunner:
     def _run_model(self, client: OpenAIClient, model_name: str) -> EvalResults:
         result = EvalResults(model=model_name)
 
-        for sname in self.config.scenarios:
-            if sname not in SCENARIO_REGISTRY:
-                logger.warning("Unknown scenario: %s — skipping", sname)
-                continue
-            cfg = DEFAULT_SCENARIO_CONFIGS[sname]
-            n   = self.config.n_samples or cfg.n_samples
-            logger.info("  Scenario: %s  (n=%d)", sname, n)
+        if not self.config.linkedin_only:
+            for sname in self.config.scenarios:
+                if sname not in SCENARIO_REGISTRY:
+                    logger.warning("Unknown scenario: %s — skipping", sname)
+                    continue
+                cfg = DEFAULT_SCENARIO_CONFIGS[sname]
+                n   = self.config.n_samples or cfg.n_samples
+                logger.info("  Scenario: %s  (n=%d)", sname, n)
 
-            scenario: Scenario = SCENARIO_REGISTRY[sname]()
-            try:
-                test_instances, few_shot = scenario.load(n, cfg.n_few_shot, self.config.seed)
-            except Exception as exc:
-                logger.error("  Failed to load %s: %s", sname, exc)
-                continue
+                scenario: Scenario = SCENARIO_REGISTRY[sname]()
+                try:
+                    test_instances, few_shot = scenario.load(n, cfg.n_few_shot, self.config.seed)
+                except Exception as exc:
+                    logger.error("  Failed to load %s: %s", sname, exc)
+                    continue
 
-            ckpt_path = self._checkpoint_path(model_name, sname)
-            result.scenario_results[sname] = self._eval_scenario(
-                client, scenario, test_instances, few_shot,
-                run_robustness=self.config.run_robustness,
-                checkpoint_path=ckpt_path,
-            )
+                ckpt_path = self._checkpoint_path(model_name, sname)
+                result.scenario_results[sname] = self._eval_scenario(
+                    client, scenario, test_instances, few_shot,
+                    run_robustness=self.config.run_robustness,
+                    checkpoint_path=ckpt_path,
+                )
 
         if self.config.run_quirk_detection:
             logger.info("  Quirk detection...")
             result.quirk_results = self._run_quirk_detection(client)
+
+        if self.config.run_linkedin_style:
+            logger.info("  LinkedIn style detection...")
+            result.linkedin_results = self._run_linkedin_style(client, model_name)
 
         result.token_usage    = client.total_tokens
         result.total_cost_usd = client.total_cost_usd
@@ -288,3 +301,73 @@ class EvalRunner:
                 except Exception as exc:
                     logger.error("  Quirk prompt failed (%s/%s): %s", cond, q[:30], exc)
         return find_quirks(condition_texts)
+
+    def _run_linkedin_style(self, client: OpenAIClient, model_name: str) -> dict:
+        condition_outputs: Dict[str, List[str]] = {c: [] for c in LINKEDIN_PROMPTS}
+        ckpt_path = os.path.join(self.config.output_dir, "checkpoints", f"{model_name.replace('/', '_')}__linkedin_style.jsonl")
+        os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
+
+        # Load checkpoint and track which (condition, prompt_idx, sample_idx) are done
+        done: Dict[tuple, dict] = {}
+        if os.path.exists(ckpt_path):
+            with open(ckpt_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                        key = (rec["condition"], rec["prompt_idx"], rec["sample_idx"])
+                        done[key] = rec
+                        condition_outputs[rec["condition"]].append(rec["completion"])
+                    except (json.JSONDecodeError, KeyError):
+                        pass
+            if done:
+                logger.info("    Resumed %d checkpointed LinkedIn records from %s", len(done), ckpt_path)
+
+        prompt_list = list(ANNOUNCEMENT_PROMPTS)
+        total_calls = len(prompt_list) * len(LINKEDIN_PROMPTS) * self.config.linkedin_samples
+        pbar = tqdm(total=total_calls, desc="linkedin-style", leave=False)
+
+        with open(ckpt_path, "a") as ckpt_f:
+            for cond, sys_prompt in LINKEDIN_PROMPTS.items():
+                for prompt_idx, prompt in enumerate(prompt_list):
+                    for sample_idx in range(self.config.linkedin_samples):
+                        pbar.update(1)
+                        key = (cond, prompt_idx, sample_idx)
+                        if key in done:
+                            continue
+
+                        try:
+                            resp = client.complete(prompt, max_tokens=200, logprobs=False, system=sys_prompt)
+                            completion = resp.completion
+                            condition_outputs[cond].append(completion)
+
+                            emoji_cnt = count_emojis(completion)
+                            phrase_cnt = count_linkedin_phrases(completion)
+                            linkedin_score = emoji_cnt + phrase_cnt
+
+                            record = {
+                                "model": model_name,
+                                "condition": cond,
+                                "prompt_idx": prompt_idx,
+                                "sample_idx": sample_idx,
+                                "prompt": prompt,
+                                "completion": completion,
+                                "emoji_count": emoji_cnt,
+                                "phrase_hits": phrase_cnt,
+                                "linkedin_score": linkedin_score,
+                            }
+                            ckpt_f.write(json.dumps(record) + "\n")
+                            ckpt_f.flush()
+                        except Exception as exc:
+                            logger.error("  LinkedIn prompt failed (%s/%s): %s", cond, prompt[:30], exc)
+        pbar.close()
+
+        analysis = analyze_outputs(condition_outputs)
+        uplift = compute_uplift(analysis, baseline="professional")
+        return {
+            "analysis": analysis,
+            "uplift": uplift,
+            "checkpoint_path": ckpt_path,
+        }
