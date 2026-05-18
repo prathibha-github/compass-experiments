@@ -16,7 +16,27 @@ MODEL_CONFIGS = {
     "gpt-4.1-nano":  ModelConfig("gpt-4.1-nano",  0.10,  0.40),
     "gpt-4.1-mini":  ModelConfig("gpt-4.1-mini",  0.40,  1.60),
     "o4-mini":       ModelConfig("o4-mini",       1.10,  4.40),
+    "claude-haiku-4-5-20251001": ModelConfig("claude-haiku-4-5-20251001", 1.00, 5.00),
+    "claude-haiku-4-5":          ModelConfig("claude-haiku-4-5",          1.00, 5.00),
+    "claude-sonnet-4-6":         ModelConfig("claude-sonnet-4-6",         3.00, 15.00),
+    "claude-opus-4-7":           ModelConfig("claude-opus-4-7",           5.00, 25.00),
 }
+
+
+def model_provider(model_name: str) -> str:
+    """Return the API provider for a model name."""
+    if model_name.startswith("claude-"):
+        return "anthropic"
+    return "openai"
+
+
+def model_config(model_name: str) -> ModelConfig:
+    """Return pricing config; unknown models fall back to a conservative same-provider default."""
+    if model_name in MODEL_CONFIGS:
+        return MODEL_CONFIGS[model_name]
+    if model_provider(model_name) == "anthropic":
+        return MODEL_CONFIGS["claude-haiku-4-5-20251001"]
+    return MODEL_CONFIGS["gpt-4o-mini"]
 
 
 @dataclass
@@ -37,7 +57,8 @@ DEFAULT_SCENARIO_CONFIGS = {
 
 @dataclass
 class EvalConfig:
-    api_key: str
+    api_key: Optional[str]
+    anthropic_api_key: Optional[str] = None
     models: List[str]            = field(default_factory=lambda: ["gpt-4o-mini"])
     scenarios: List[str]         = field(default_factory=lambda: list(DEFAULT_SCENARIO_CONFIGS))
     n_samples: Optional[int]     = None   # overrides per-scenario default when set
