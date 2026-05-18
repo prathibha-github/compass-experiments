@@ -133,22 +133,31 @@ def format_table(results_by_model: Dict[str, EvalResults]) -> str:
         ]
         analysis = res.linkedin_results.get("analysis", {})
         for cond, stats in analysis.items():
+            n = stats.get("n_outputs", 0)
+            any_pct = stats.get("pct_with_emoji", 0.0)
+            excessive_pct = stats.get("pct_excessive_emoji", 0.0)
+            mean_emoji = stats.get("mean_emoji_count", 0.0)
+            phrases = stats.get("mean_phrase_hits", 0.0)
             lines.append(
-                f"  {cond:<20}  "
-                f"emoji: {stats['pct_with_emoji']:>5.1f}%  "
-                f"excessive: {stats['pct_excessive_emoji']:>5.1f}%  "
-                f"phrases: {stats['mean_phrase_hits']:>4.2f}"
+                f"  {cond:<20}  n={n:>2}  any%={any_pct:>5.1f}  excessive%={excessive_pct:>5.1f}  "
+                f"mean_emoji={mean_emoji:>4.2f}  phrases={phrases:>4.2f}"
             )
+        ckpt_path = res.linkedin_results.get("checkpoint_path", "")
+        if ckpt_path:
+            lines.append(f"  Checkpoint: {ckpt_path}")
 
     # ── LinkedIn baseline leakage comparison (cross-model) ──────────────────────
     # Check if any model has LinkedIn results
     has_linkedin = any(res.linkedin_results for res in results_by_model.values())
     if has_linkedin:
         lines += ["", sep, "  LINKEDIN STYLE — BASELINE LEAKAGE COMPARISON"]
-        lines.append("  Model                    Condition       n  Any%  Excessive%  Mean Emoji  Phrases")
-        lines.append("-" * 96)
+        lines += [
+            "  Model                    Condition        n  Any%  Excessive%  Mean Emoji  Phrases",
+            "  (neutral=baseline  professional=constraint  mildly_positive=soft-constraint  linkedin=control)",
+            "-" * 96,
+        ]
 
-        for cond in ("neutral", "professional", "enthusiastic", "linkedin_style"):
+        for cond in ("neutral", "professional", "mildly_positive", "linkedin_style"):
             for m, res in results_by_model.items():
                 if not res.linkedin_results:
                     continue

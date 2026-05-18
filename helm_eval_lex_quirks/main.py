@@ -50,8 +50,8 @@ def main(argv=None):
     parser.add_argument("--output-dir", default="results")
     parser.add_argument("--no-robustness",  action="store_true",
                         help="Skip robustness (typo-perturbation) evaluation")
-    parser.add_argument("--no-quirks", action="store_true",
-                        help="Skip goblin-style lexical quirk detection")
+    parser.add_argument("--quirks", action="store_true",
+                        help="Enable goblin-style lexical quirk detection (disabled by default)")
     parser.add_argument("--linkedin-style", action="store_true",
                         help="Run LinkedIn style (emoji + phrase) detection")
     parser.add_argument("--linkedin-only", action="store_true",
@@ -73,7 +73,6 @@ def main(argv=None):
     if args.linkedin_only:
         args.linkedin_style = True
         args.no_robustness = True
-        args.no_quirks = True
         args.scenarios = []
 
     cfg = EvalConfig(
@@ -83,7 +82,7 @@ def main(argv=None):
         n_samples=args.n_samples,
         output_dir=args.output_dir,
         run_robustness=not args.no_robustness,
-        run_quirk_detection=not args.no_quirks,
+        run_quirk_detection=args.quirks,
         run_linkedin_style=args.linkedin_style,
         linkedin_only=args.linkedin_only,
         linkedin_samples=args.linkedin_samples,
