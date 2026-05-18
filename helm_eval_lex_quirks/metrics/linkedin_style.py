@@ -15,9 +15,9 @@ SYSTEM_PROMPTS: Dict[str, str] = {
         "You are a professional, formal, and concise assistant. "
         "Respond with precision and avoid unnecessary embellishment."
     ),
-    "enthusiastic": (
-        "You are an upbeat and positive assistant. "
-        "Be encouraging and celebrate accomplishments with genuine enthusiasm."
+    "mildly_positive": (
+        "You are a positive and encouraging assistant. "
+        "Keep the tone natural and professional. Do not use emojis unless the user explicitly asks."
     ),
     "linkedin_style": (
         "You are posting to LinkedIn. Write with energy, celebrate wins, "

@@ -88,6 +88,34 @@ def format_table(results_by_model: Dict[str, EvalResults]) -> str:
             if sr.disambig_accuracy is not None:
                 lines.append(f"    Disambiguated accuracy        : {sr.disambig_accuracy:.4f}")
 
+    # ── LinkedIn cross-model comparison ──────────────────────────────────────
+    if any(res.linkedin_results for res in results_by_model.values()):
+        lines += ["", sep, "  LINKEDIN STYLE — CROSS-MODEL COMPARISON", ""]
+        conditions = ("neutral", "professional", "mildly_positive", "linkedin_style")
+        lines.append("  (neutral=baseline, professional=instruction-following, mildly_positive=soft-constraint, linkedin_style=control)")
+        lines += [""]
+
+        header = f"{'Condition':<20}  " + "  ".join(f"{m:<14}" for m in models)
+        lines.append(header)
+        lines.append("-" * (20 + 2 + 16 * len(models)))
+
+        for cond in conditions:
+            row = f"  {cond:<18}  "
+            cond_data = []
+            for m in models:
+                res = results_by_model[m]
+                if res.linkedin_results:
+                    analysis = res.linkedin_results.get("analysis", {})
+                    stats = analysis.get(cond)
+                    if stats:
+                        cond_data.append(f"{stats['pct_with_emoji']:>5.1f}% n={stats['n_outputs']:>2}")
+                    else:
+                        cond_data.append("N/A")
+                else:
+                    cond_data.append("N/A")
+            row += "  ".join(f"{data:<14}" for data in cond_data)
+            lines.append(row)
+
     # ── cost ──────────────────────────────────────────────────────────────────
     lines += ["", sep, "  COST SUMMARY", "-" * 96]
     for m, res in results_by_model.items():
@@ -134,11 +162,15 @@ def format_table(results_by_model: Dict[str, EvalResults]) -> str:
         analysis = res.linkedin_results.get("analysis", {})
         for cond, stats in analysis.items():
             lines.append(
-                f"  {cond:<20}  "
-                f"emoji: {stats['pct_with_emoji']:>5.1f}%  "
-                f"excessive: {stats['pct_excessive_emoji']:>5.1f}%  "
-                f"phrases: {stats['mean_phrase_hits']:>4.2f}"
+                f"  {cond:<20}  n={stats['n_outputs']:>3}  "
+                f"any%={stats['pct_with_emoji']:>5.1f}  "
+                f"excessive%={stats['pct_excessive_emoji']:>5.1f}  "
+                f"mean_emoji={stats['mean_emoji_count']:>4.2f}  "
+                f"phrases={stats['mean_phrase_hits']:>4.2f}"
             )
+        checkpoint_path = res.linkedin_results.get("checkpoint_path")
+        if checkpoint_path:
+            lines.append(f"  Checkpoint: {checkpoint_path}")
 
     lines.append(sep)
     return "\n".join(lines)
