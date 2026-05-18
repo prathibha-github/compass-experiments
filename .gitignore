@@ -1,0 +1,29 @@
+# virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# eval outputs (raw results stay out of version control)
+results/
+checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# secrets — never commit API keys
+.env
+*.env
