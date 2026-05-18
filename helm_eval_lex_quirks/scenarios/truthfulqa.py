@@ -4,7 +4,7 @@ from typing import List, Tuple
 
 from datasets import load_dataset
 
-from helm_eval.scenarios.base import Instance, Scenario
+from helm_eval_lex_quirks.scenarios.base import Instance, Scenario
 
 LABELS = ["A", "B", "C", "D"]
 N_DISTRACTORS = 3   # correct answer + this many wrong answers = 4 choices max

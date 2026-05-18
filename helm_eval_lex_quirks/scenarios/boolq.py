@@ -3,7 +3,7 @@ from typing import List, Tuple
 
 from datasets import load_dataset
 
-from helm_eval.scenarios.base import Instance, Scenario
+from helm_eval_lex_quirks.scenarios.base import Instance, Scenario
 
 MAX_PASSAGE_CHARS = 800  # keep prompts short for cost
 

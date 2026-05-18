@@ -4,16 +4,19 @@ HELM-style evaluation harness.
 Usage examples
 --------------
 # Dry run — estimate cost only
-python -m helm_eval.main --dry-run
+python -m helm_eval_lex_quirks.main --dry-run
 
 # Full eval on gpt-4o-mini with defaults (100 samples/scenario)
-python -m helm_eval.main --api-key sk-...
+python -m helm_eval_lex_quirks.main --api-key sk-...
 
 # Cheaper quick smoke-test (20 samples, no robustness)
-python -m helm_eval.main --api-key sk-... --n-samples 20 --no-robustness --no-quirks
+python -m helm_eval_lex_quirks.main --api-key sk-... --n-samples 20 --no-robustness --no-quirks
 
 # Evaluate multiple models
-python -m helm_eval.main --api-key sk-... --models gpt-4o-mini gpt-4o
+python -m helm_eval_lex_quirks.main --api-key sk-... --models gpt-4o-mini gpt-4o
+
+# Run LinkedIn style detection
+python -m helm_eval_lex_quirks.main --api-key sk-... --linkedin-style
 """
 import argparse
 import logging
@@ -26,9 +29,9 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 
-from helm_eval.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig
-from helm_eval.runner import SCENARIO_REGISTRY, EvalRunner
-from helm_eval import report as rpt
+from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig
+from helm_eval_lex_quirks.runner import SCENARIO_REGISTRY, EvalRunner
+from helm_eval_lex_quirks import report as rpt
 
 
 def main(argv=None):
@@ -39,7 +42,7 @@ def main(argv=None):
     parser.add_argument("--api-key",   default=os.environ.get("OPENAI_API_KEY"),
                         help="OpenAI API key (or set OPENAI_API_KEY env var)")
     parser.add_argument("--models",    nargs="+", default=["gpt-4o-mini"],
-                        choices=["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"])
+                        help="Model names (gpt-4o-mini, gpt-4o, gpt-4-turbo, gpt-4.1-nano, gpt-4.1-mini, o4-mini, etc.)")
     parser.add_argument("--scenarios", nargs="+", default=list(DEFAULT_SCENARIO_CONFIGS),
                         choices=list(SCENARIO_REGISTRY))
     parser.add_argument("--n-samples", type=int, default=None,
@@ -49,6 +52,12 @@ def main(argv=None):
                         help="Skip robustness (typo-perturbation) evaluation")
     parser.add_argument("--no-quirks", action="store_true",
                         help="Skip goblin-style lexical quirk detection")
+    parser.add_argument("--linkedin-style", action="store_true",
+                        help="Run LinkedIn style (emoji + phrase) detection")
+    parser.add_argument("--linkedin-only", action="store_true",
+                        help="Run only LinkedIn style detection, skip benchmark scenarios")
+    parser.add_argument("--linkedin-samples", type=int, default=4,
+                        help="Repetitions per prompt for LinkedIn style detection")
     parser.add_argument("--seed",             type=int,   default=42)
     parser.add_argument("--request-interval", type=float, default=2.0,
                         help="Seconds between API calls. Raise to 4-6 for free-tier accounts.")
@@ -60,6 +69,13 @@ def main(argv=None):
         print("ERROR: supply --api-key or set OPENAI_API_KEY.", file=sys.stderr)
         sys.exit(1)
 
+    # Handle --linkedin-only: skip all benchmark scenarios
+    if args.linkedin_only:
+        args.linkedin_style = True
+        args.no_robustness = True
+        args.no_quirks = True
+        args.scenarios = []
+
     cfg = EvalConfig(
         api_key=args.api_key,
         models=args.models,
@@ -68,6 +84,9 @@ def main(argv=None):
         output_dir=args.output_dir,
         run_robustness=not args.no_robustness,
         run_quirk_detection=not args.no_quirks,
+        run_linkedin_style=args.linkedin_style,
+        linkedin_only=args.linkedin_only,
+        linkedin_samples=args.linkedin_samples,
         seed=args.seed,
         dry_run=args.dry_run,
         request_interval=args.request_interval,
@@ -83,6 +102,8 @@ def main(argv=None):
             extras.append("robustness")
         if cfg.run_quirk_detection:
             extras.append("quirk-detection")
+        if cfg.run_linkedin_style:
+            extras.append("linkedin-style")
         extra_str = f"  [{', '.join(extras)}]" if extras else ""
         print(f"  {model:<20}  ~${cost:.4f}{extra_str}")
 
