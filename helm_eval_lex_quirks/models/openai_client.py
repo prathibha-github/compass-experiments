@@ -137,7 +137,8 @@ class OpenAIClient:
             max_completion_tokens=max_tokens,
             temperature=actual_temperature,
         )
-        if logprobs:
+        # GPT-5 models don't support logprobs yet
+        if logprobs and not (self.model.startswith("gpt-5") or self.model.startswith("o4")):
             kwargs["logprobs"]     = True
             kwargs["top_logprobs"] = top_logprobs
 
