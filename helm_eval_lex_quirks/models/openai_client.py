@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 
 import openai
 
-from helm_eval_lex_quirks.config import MODEL_CONFIGS, ModelConfig
+from helm_eval_lex_quirks.config import ModelConfig, model_config
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class OpenAIClient:
         # max_retries=0: the SDK must not absorb 429s before we handle them.
         self.client   = openai.OpenAI(api_key=api_key, max_retries=0)
         self.model    = model
-        self.config: ModelConfig = MODEL_CONFIGS.get(model, MODEL_CONFIGS["gpt-4o-mini"])
+        self.config: ModelConfig = model_config(model)
         self._input_tokens    = 0
         self._output_tokens   = 0
         self._request_interval = request_interval
