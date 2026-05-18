@@ -3,6 +3,7 @@ from typing import Protocol
 from helm_eval_lex_quirks.config import EvalConfig, model_provider
 from helm_eval_lex_quirks.models.anthropic_client import AnthropicClient
 from helm_eval_lex_quirks.models.openai_client import OpenAIClient
+from helm_eval_lex_quirks.models.openai_responses_client import OpenAIResponsesClient
 
 
 class CompletionClient(Protocol):
@@ -35,6 +36,13 @@ def create_client(config: EvalConfig, model_name: str) -> CompletionClient:
                 f"Model {model_name!r} requires --anthropic-api-key or ANTHROPIC_API_KEY."
             )
         return AnthropicClient(config.anthropic_api_key, model_name, config.request_interval)
+
+    # GPT-5 models use the Responses API
+    if model_name.startswith("gpt-5"):
+        if not config.api_key:
+            raise ValueError(f"Model {model_name!r} requires --api-key or OPENAI_API_KEY.")
+        return OpenAIResponsesClient(config.api_key, model_name, config.request_interval)
+
     if not config.api_key:
         raise ValueError(f"Model {model_name!r} requires --api-key or OPENAI_API_KEY.")
     return OpenAIClient(config.api_key, model_name, config.request_interval)
