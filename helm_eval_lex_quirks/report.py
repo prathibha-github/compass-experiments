@@ -140,6 +140,33 @@ def format_table(results_by_model: Dict[str, EvalResults]) -> str:
                 f"phrases: {stats['mean_phrase_hits']:>4.2f}"
             )
 
+    # ── LinkedIn baseline leakage comparison (cross-model) ──────────────────────
+    # Check if any model has LinkedIn results
+    has_linkedin = any(res.linkedin_results for res in results_by_model.values())
+    if has_linkedin:
+        lines += ["", sep, "  LINKEDIN STYLE — BASELINE LEAKAGE COMPARISON"]
+        lines.append("  Model                    Condition       n  Any%  Excessive%  Mean Emoji  Phrases")
+        lines.append("-" * 96)
+
+        for cond in ("neutral", "professional", "enthusiastic", "linkedin_style"):
+            for m, res in results_by_model.items():
+                if not res.linkedin_results:
+                    continue
+                analysis = res.linkedin_results.get("analysis", {})
+                stats = analysis.get(cond)
+                if not stats:
+                    continue
+                n = stats.get("n_outputs", 0)
+                any_pct = stats.get("pct_with_emoji", 0.0)
+                excessive_pct = stats.get("pct_excessive_emoji", 0.0)
+                mean_emoji = stats.get("mean_emoji_count", 0.0)
+                phrases = stats.get("mean_phrase_hits", 0.0)
+                lines.append(
+                    f"  {m:<24}  {cond:<15}  {n:>2}  {any_pct:>5.1f}%  {excessive_pct:>10.1f}%  "
+                    f"{mean_emoji:>10.2f}  {phrases:>7.2f}"
+                )
+            lines.append("")  # Blank line between condition groups
+
     lines.append(sep)
     return "\n".join(lines)
 
