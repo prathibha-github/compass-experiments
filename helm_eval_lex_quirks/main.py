@@ -52,6 +52,7 @@ def main(argv=None):
                         help="Skip robustness (typo-perturbation) evaluation")
     parser.add_argument("--quirks", action="store_true",
                         help="Enable goblin-style lexical quirk detection (disabled by default)")
+    parser.add_argument("--no-quirks", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--linkedin-style", action="store_true",
                         help="Run LinkedIn style (emoji + phrase) detection")
     parser.add_argument("--linkedin-only", action="store_true",
