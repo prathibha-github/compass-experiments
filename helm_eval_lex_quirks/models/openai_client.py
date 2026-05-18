@@ -122,12 +122,7 @@ class OpenAIClient:
         top_logprobs: int = 20,   # 20 = API max; ensures A/B/C/D are covered
         system: str = "You are a helpful assistant.",
     ) -> ModelResponse:
-        # GPT-5 models don't support temperature < 1; use default (1) for those models
-        if self.model.startswith("gpt-5") or self.model.startswith("o4"):
-            actual_temperature = 1.0
-        else:
-            actual_temperature = temperature
-
+        # GPT-5 models: omit temperature to use API default (setting it causes empty responses)
         kwargs: dict = dict(
             model=self.model,
             messages=[
@@ -135,8 +130,11 @@ class OpenAIClient:
                 {"role": "user",   "content": prompt},
             ],
             max_completion_tokens=max_tokens,
-            temperature=actual_temperature,
         )
+
+        # Only set temperature for non-gpt5/o4 models
+        if not (self.model.startswith("gpt-5") or self.model.startswith("o4")):
+            kwargs["temperature"] = temperature
         if logprobs:
             kwargs["logprobs"]     = True
             kwargs["top_logprobs"] = top_logprobs
