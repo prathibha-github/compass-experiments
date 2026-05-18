@@ -167,10 +167,13 @@ class OpenAIClient:
                         raw_lp = content[0].top_logprobs
 
                 completion = resp.choices[0].message.content or ""
-                if not completion.strip() and self.model.startswith("gpt-5"):
-                    logger.debug(
-                        "gpt-5 empty response: usage=%s, choices=%s",
-                        usage, resp.choices[0].message
+                if self.model.startswith("gpt-5"):
+                    logger.warning(
+                        "gpt-5 response: content_type=%s, content_len=%d, content=%r, full_message=%s",
+                        type(resp.choices[0].message.content),
+                        len(completion),
+                        completion[:100] if completion else "",
+                        resp.choices[0].message
                     )
                 return ModelResponse(
                     completion=completion.strip(),
