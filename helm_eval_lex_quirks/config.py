@@ -43,7 +43,7 @@ class EvalConfig:
     n_samples: Optional[int]     = None   # overrides per-scenario default when set
     output_dir: str              = "results"
     run_robustness: bool         = True
-    run_quirk_detection: bool    = True
+    run_quirk_detection: bool    = False
     run_linkedin_style: bool     = False
     linkedin_only: bool          = False
     linkedin_samples: int        = 4     # repetitions per prompt for style detection
