@@ -115,6 +115,13 @@ class OpenAIResponsesClient:
                 )
 
                 completion = resp.output_text or ""
+                logger.warning(
+                    "Responses API response: output_text_type=%s, output_text_len=%d, output_text=%r, full_resp=%s",
+                    type(resp.output_text),
+                    len(completion),
+                    completion[:100] if completion else "",
+                    resp
+                )
                 # Note: Responses API does not provide token usage in the same way
                 # Estimate based on response length as a fallback
                 output_tokens = len(completion) // 4
