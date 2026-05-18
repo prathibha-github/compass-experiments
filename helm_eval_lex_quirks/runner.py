@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 
 from tqdm import tqdm
 
-from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig
+from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, model_config
 from helm_eval_lex_quirks.metrics.accuracy import extract_mc_answer, multiple_choice_accuracy
 from helm_eval_lex_quirks.metrics.calibration import compute_ece, extract_choice_probs
 from helm_eval_lex_quirks.metrics.quirk_detection import QUIRK_PROMPTS, SYSTEM_PROMPTS, find_quirks
@@ -15,7 +15,7 @@ from helm_eval_lex_quirks.metrics.linkedin_style import (
     analyze_outputs, compute_uplift, count_emojis, count_linkedin_phrases
 )
 from helm_eval_lex_quirks.metrics.robustness import compute_robustness_score, inject_typos
-from helm_eval_lex_quirks.models.openai_client import OpenAIClient
+from helm_eval_lex_quirks.models import CompletionClient, create_client
 from helm_eval_lex_quirks.scenarios.base import Instance, Scenario
 from helm_eval_lex_quirks.scenarios.bbq import BBQScenario
 from helm_eval_lex_quirks.scenarios.boolq import BoolQScenario
@@ -32,6 +32,16 @@ SCENARIO_REGISTRY: Dict[str, type] = {
     "boolq":      BoolQScenario,
     "bbq":        BBQScenario,
 }
+
+
+def estimate_model_cost(model_name: str, prompts: List[str], max_tokens: int = 1) -> float:
+    cfg = model_config(model_name)
+    n_input = sum(len(p) // 4 for p in prompts)
+    n_output = len(prompts) * max_tokens
+    return (
+        n_input * cfg.input_cost_per_million / 1_000_000
+        + n_output * cfg.output_cost_per_million / 1_000_000
+    )
 
 
 @dataclass
@@ -69,20 +79,19 @@ class EvalRunner:
     def estimate_cost(self) -> Dict[str, float]:
         estimates = {}
         for model_name in self.config.models:
-            client = OpenAIClient(self.config.api_key, model_name, self.config.request_interval)
             total  = 0.0
             for sname in self.config.scenarios:
                 cfg = DEFAULT_SCENARIO_CONFIGS[sname]
                 n   = self.config.n_samples or cfg.n_samples
                 dummy = ["x" * 1600] * n
-                base  = client.estimate_cost(dummy, max_tokens=1)
+                base  = estimate_model_cost(model_name, dummy, max_tokens=1)
                 total += base * (2 if self.config.run_robustness else 1)
             if self.config.run_quirk_detection:
                 n_quirk = len(QUIRK_PROMPTS) * len(SYSTEM_PROMPTS)
-                total  += client.estimate_cost(["x" * 400] * n_quirk, max_tokens=150)
+                total  += estimate_model_cost(model_name, ["x" * 400] * n_quirk, max_tokens=150)
             if self.config.run_linkedin_style:
                 n_linkedin = len(ANNOUNCEMENT_PROMPTS) * len(LINKEDIN_PROMPTS) * self.config.linkedin_samples
-                total += client.estimate_cost(["x" * 100] * n_linkedin, max_tokens=200)
+                total += estimate_model_cost(model_name, ["x" * 100] * n_linkedin, max_tokens=200)
             estimates[model_name] = round(total, 4)
         return estimates
 
@@ -90,7 +99,7 @@ class EvalRunner:
         out = {}
         for model_name in self.config.models:
             logger.info("Evaluating: %s", model_name)
-            client = OpenAIClient(self.config.api_key, model_name, self.config.request_interval)
+            client = create_client(self.config, model_name)
             out[model_name] = self._run_model(client, model_name)
         return out
 
@@ -123,7 +132,7 @@ class EvalRunner:
 
     # ── internal ─────────────────────────────────────────────────────────────
 
-    def _run_model(self, client: OpenAIClient, model_name: str) -> EvalResults:
+    def _run_model(self, client: CompletionClient, model_name: str) -> EvalResults:
         result = EvalResults(model=model_name)
 
         if not self.config.linkedin_only:
@@ -163,7 +172,7 @@ class EvalRunner:
 
     def _eval_scenario(
         self,
-        client:           OpenAIClient,
+        client:           CompletionClient,
         scenario:         Scenario,
         instances:        List[Instance],
         few_shot:         List[Instance],
@@ -291,7 +300,7 @@ class EvalRunner:
 
         return sr
 
-    def _run_quirk_detection(self, client: OpenAIClient) -> List[dict]:
+    def _run_quirk_detection(self, client: CompletionClient) -> List[dict]:
         condition_texts: Dict[str, List[str]] = {c: [] for c in SYSTEM_PROMPTS}
         for cond, sys_prompt in SYSTEM_PROMPTS.items():
             for q in tqdm(QUIRK_PROMPTS, desc=f"quirks/{cond}", leave=False):
@@ -302,7 +311,7 @@ class EvalRunner:
                     logger.error("  Quirk prompt failed (%s/%s): %s", cond, q[:30], exc)
         return find_quirks(condition_texts)
 
-    def _run_linkedin_style(self, client: OpenAIClient, model_name: str) -> dict:
+    def _run_linkedin_style(self, client: CompletionClient, model_name: str) -> dict:
         condition_outputs: Dict[str, List[str]] = {c: [] for c in LINKEDIN_PROMPTS}
         ckpt_path = os.path.join(self.config.output_dir, "checkpoints", f"{model_name.replace('/', '_')}__linkedin_style.jsonl")
         os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
