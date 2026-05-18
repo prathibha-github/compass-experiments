@@ -107,11 +107,15 @@ class OpenAIResponsesClient:
             self._last_call_at = time.monotonic()
 
             try:
+                # GPT-5 models need larger token budgets for reasoning + output
+                # Use 10x for reasoning models to ensure both reasoning and text generation
+                actual_max_tokens = max_tokens * 10 if self.model.startswith("gpt-5") else max_tokens
+
                 resp = self.client.responses.create(
                     model=self.model,
                     instructions=system,
                     input=prompt,
-                    max_output_tokens=max_tokens,
+                    max_output_tokens=actual_max_tokens,
                 )
 
                 completion = resp.output_text or ""
