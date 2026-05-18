@@ -67,8 +67,11 @@ class OpenAIResponsesClient:
         )
 
     def estimate_cost(self, prompts: List[str], max_tokens: int = 1) -> float:
+        # GPT-5 reasoning models use 10x token budget in live calls
+        # Estimate reflects upper bound for reasoning + output
+        actual_max_tokens = max_tokens * 10 if self.model.startswith("gpt-5") else max_tokens
         n_input = sum(len(p) // 4 for p in prompts)
-        n_output = len(prompts) * max_tokens
+        n_output = len(prompts) * actual_max_tokens
         return (
             n_input * self.config.input_cost_per_million / 1_000_000
             + n_output * self.config.output_cost_per_million / 1_000_000
@@ -119,22 +122,37 @@ class OpenAIResponsesClient:
                 )
 
                 completion = resp.output_text or ""
-                logger.warning(
-                    "Responses API response: output_text_type=%s, output_text_len=%d, output_text=%r, full_resp=%s",
-                    type(resp.output_text),
-                    len(completion),
-                    completion[:100] if completion else "",
-                    resp
-                )
-                # Note: Responses API does not provide token usage in the same way
-                # Estimate based on response length as a fallback
-                output_tokens = len(completion) // 4
-                self._output_tokens += output_tokens
+
+                # Reject empty outputs to prevent data contamination
+                if not completion.strip():
+                    logger.warning(
+                        "Responses API returned empty output. status=%s, incomplete_details=%s, usage=%s",
+                        getattr(resp, "status", "unknown"),
+                        getattr(resp, "incomplete_details", None),
+                        getattr(resp, "usage", None),
+                    )
+                    if attempt == max_attempts - 1:
+                        raise RuntimeError(f"Responses API returned empty output after {max_attempts} attempts")
+                    time.sleep(min(4 * (2 ** attempt), 30))
+                    continue
+
+                # Read actual token usage from Responses API
+                usage = getattr(resp, "usage", None)
+                if usage:
+                    input_tokens = getattr(usage, "input_tokens", 0)
+                    output_tokens = getattr(usage, "output_tokens", 0)
+                    self._input_tokens += input_tokens
+                    self._output_tokens += output_tokens
+                else:
+                    # Fallback if usage not available
+                    input_tokens = 0
+                    output_tokens = len(completion) // 4
+                    self._output_tokens += output_tokens
 
                 return ModelResponse(
                     completion=completion,
                     logprobs=None,
-                    input_tokens=0,
+                    input_tokens=input_tokens,
                     output_tokens=output_tokens,
                 )
 
