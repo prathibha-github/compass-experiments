@@ -36,8 +36,10 @@ SCENARIO_REGISTRY: Dict[str, type] = {
 
 def estimate_model_cost(model_name: str, prompts: List[str], max_tokens: int = 1) -> float:
     cfg = model_config(model_name)
+    # GPT-5 reasoning models use 10x token budget for reasoning + output
+    actual_max_tokens = max_tokens * 10 if model_name.startswith("gpt-5") else max_tokens
     n_input = sum(len(p) // 4 for p in prompts)
-    n_output = len(prompts) * max_tokens
+    n_output = len(prompts) * actual_max_tokens
     return (
         n_input * cfg.input_cost_per_million / 1_000_000
         + n_output * cfg.output_cost_per_million / 1_000_000
