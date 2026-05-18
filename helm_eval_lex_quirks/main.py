@@ -12,8 +12,9 @@ python -m helm_eval_lex_quirks.main --api-key sk-...
 # Cheaper quick smoke-test (20 samples, no robustness)
 python -m helm_eval_lex_quirks.main --api-key sk-... --n-samples 20 --no-robustness
 
-# Evaluate multiple models
-python -m helm_eval_lex_quirks.main --api-key sk-... --models gpt-4o-mini gpt-4o
+# Evaluate multiple OpenAI and Claude models
+python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-... \
+  --models gpt-4o-mini claude-haiku-4-5-20251001
 
 # Run LinkedIn style detection
 python -m helm_eval_lex_quirks.main --api-key sk-... --linkedin-style
@@ -29,7 +30,7 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 
-from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig
+from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, model_provider
 from helm_eval_lex_quirks.runner import SCENARIO_REGISTRY, EvalRunner
 from helm_eval_lex_quirks import report as rpt
 
@@ -41,8 +42,10 @@ def main(argv=None):
     )
     parser.add_argument("--api-key",   default=os.environ.get("OPENAI_API_KEY"),
                         help="OpenAI API key (or set OPENAI_API_KEY env var)")
+    parser.add_argument("--anthropic-api-key", default=os.environ.get("ANTHROPIC_API_KEY"),
+                        help="Anthropic API key for Claude models (or set ANTHROPIC_API_KEY)")
     parser.add_argument("--models",    nargs="+", default=["gpt-4o-mini"],
-                        help="Model names (gpt-4o-mini, gpt-4o, gpt-4-turbo, gpt-4.1-nano, gpt-4.1-mini, o4-mini, etc.)")
+                        help="Model names (gpt-4o-mini, gpt-4.1-nano, claude-haiku-4-5-20251001, claude-sonnet-4-6, etc.)")
     parser.add_argument("--scenarios", nargs="+", default=list(DEFAULT_SCENARIO_CONFIGS),
                         choices=list(SCENARIO_REGISTRY))
     parser.add_argument("--n-samples", type=int, default=None,
@@ -66,18 +69,23 @@ def main(argv=None):
                         help="Estimate cost and exit without calling the API")
     args = parser.parse_args(argv)
 
-    if not args.api_key:
-        print("ERROR: supply --api-key or set OPENAI_API_KEY.", file=sys.stderr)
-        sys.exit(1)
-
     # Handle --linkedin-only: skip all benchmark scenarios
     if args.linkedin_only:
         args.linkedin_style = True
         args.no_robustness = True
         args.scenarios = []
 
+    providers = {model_provider(model) for model in args.models}
+    if "openai" in providers and not args.api_key:
+        print("ERROR: OpenAI models require --api-key or OPENAI_API_KEY.", file=sys.stderr)
+        sys.exit(1)
+    if "anthropic" in providers and not args.anthropic_api_key and not args.dry_run:
+        print("ERROR: Claude models require --anthropic-api-key or ANTHROPIC_API_KEY.", file=sys.stderr)
+        sys.exit(1)
+
     cfg = EvalConfig(
         api_key=args.api_key,
+        anthropic_api_key=args.anthropic_api_key,
         models=args.models,
         scenarios=args.scenarios,
         n_samples=args.n_samples,
