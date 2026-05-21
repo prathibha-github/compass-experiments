@@ -391,6 +391,10 @@ class EvalRunner:
         uplift_fn: Optional[TicUpliftFn] = None,
     ) -> dict:
         condition_outputs: Dict[str, List[str]] = {c.name: [] for c in suite.conditions}
+        task_outputs: Dict[str, Dict[str, List[str]]] = {
+            prompt.task_type: {c.name: [] for c in suite.conditions}
+            for prompt in suite.prompts
+        }
         safe_model = model_name.replace("/", "_").replace(":", "_")
         ckpt_path = os.path.join(
             self.config.output_dir,
@@ -402,6 +406,12 @@ class EvalRunner:
         done, resumed_outputs = self._load_tic_checkpoint(ckpt_path, suite)
         for condition, outputs in resumed_outputs.items():
             condition_outputs[condition].extend(outputs)
+        for rec in done.values():
+            condition = rec.get("condition")
+            task_type = self._record_task_type(rec, suite)
+            completion = rec.get("completion")
+            if condition in condition_outputs and completion and task_type in task_outputs:
+                task_outputs[task_type][condition].append(completion)
 
         total_calls = len(suite.prompts) * len(suite.conditions) * samples
         pbar = tqdm(total=total_calls, desc=progress_label or suite.name, leave=False)
@@ -424,6 +434,7 @@ class EvalRunner:
                             )
                             completion = resp.completion
                             condition_outputs[condition.name].append(completion)
+                            task_outputs[prompt.task_type][condition.name].append(completion)
                             detector_results = analyze_text(completion, suite)
 
                             record = {
@@ -432,6 +443,7 @@ class EvalRunner:
                                 "suite": suite.name,
                                 "condition": condition.name,
                                 "prompt_id": prompt.id,
+                                "task_type": prompt.task_type,
                                 "prompt_idx": prompt_idx,
                                 "sample_idx": sample_idx,
                                 "prompt": prompt.text,
@@ -466,8 +478,32 @@ class EvalRunner:
             "suite": suite.name,
             "analysis": analysis,
             "uplift": uplift,
+            "task_segments": {
+                task_type: (
+                    analyze_fn(outputs) if analyze_fn else summarize_outputs(outputs, suite)
+                )
+                for task_type, outputs in task_outputs.items()
+            },
             "checkpoint_path": ckpt_path,
         }
+
+    @staticmethod
+    def _record_task_type(rec: dict, suite: TicSuite) -> str:
+        task_type = rec.get("task_type")
+        if task_type:
+            return task_type
+
+        prompt_id = rec.get("prompt_id")
+        if prompt_id:
+            for prompt in suite.prompts:
+                if prompt.id == prompt_id:
+                    return prompt.task_type
+
+        prompt_idx = rec.get("prompt_idx")
+        if isinstance(prompt_idx, int) and 0 <= prompt_idx < len(suite.prompts):
+            return suite.prompts[prompt_idx].task_type
+
+        return "general"
 
     @staticmethod
     def _load_tic_checkpoint(

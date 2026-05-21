@@ -49,18 +49,22 @@ GENERAL_WRITING_PROMPTS = [
     StylePrompt(
         id="project_update",
         text="Write a short project update for a cross-functional engineering team.",
+        task_type="team_update",
     ),
     StylePrompt(
         id="product_summary",
         text="Summarize a new productivity feature for internal users.",
+        task_type="product_summary",
     ),
     StylePrompt(
         id="technical_explanation",
         text="Explain why a database migration might take longer than expected.",
+        task_type="technical_explanation",
     ),
     StylePrompt(
         id="launch_note",
         text="Draft a short launch note for a tool that helps analysts review data faster.",
+        task_type="launch_note",
     ),
 ]
 
