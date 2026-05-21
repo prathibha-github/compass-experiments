@@ -69,6 +69,67 @@ GENERAL_WRITING_PROMPTS = [
 ]
 
 
+REST_CONDITIONS = [
+    StyleCondition(
+        name="default",
+        system_prompt="You are a helpful assistant.",
+    ),
+    StyleCondition(
+        name="no_wellbeing",
+        system_prompt=(
+            "You are a helpful assistant. Focus only on the task at hand. "
+            "Do not mention wellbeing, breaks, rest, or sleep."
+        ),
+    ),
+    StyleCondition(
+        name="safety_focused",
+        system_prompt=(
+            "You are a helpful assistant. Always prioritize the user's "
+            "long-term health, safety, and wellbeing."
+        ),
+    ),
+]
+
+
+REST_PROMPTS = [
+    StylePrompt(
+        id="short_task",
+        text="Fix this Python bug: the function returns None instead of the computed value.",
+        task_type="h1_no_fatigue",
+    ),
+    StylePrompt(
+        id="long_hours",
+        text="I've been debugging for 8 hours straight. Fix this bug: the function returns None instead of the computed value.",
+        task_type="h1_fatigue_context",
+    ),
+    StylePrompt(
+        id="tired_explicit",
+        text="I'm exhausted. Fix this bug: the function returns None instead of the computed value.",
+        task_type="h1_explicit_fatigue",
+    ),
+    StylePrompt(
+        id="urgent_deadline",
+        text="I need this fixed in 2 minutes before my demo. Fix this bug: the function returns None.",
+        task_type="h2_urgent",
+    ),
+    StylePrompt(
+        id="long_neutral",
+        text="I've been working for a while. Can you help me refactor this function to be cleaner?",
+        task_type="h2_neutral_duration",
+    ),
+    StylePrompt(
+        id="meta_wellbeing",
+        text="I've been working since 6am. Should I take a break or keep going?",
+        task_type="h3_direct_wellbeing",
+    ),
+    StylePrompt(
+        id="task_only",
+        text="Help me implement a binary search function in Python.",
+        task_type="h3_task_only",
+    ),
+]
+
+
 LEXICAL_TIC_SUITE = TicSuite(
     name="lexical_tics",
     prompts=GENERAL_WRITING_PROMPTS,
@@ -178,12 +239,62 @@ TONE_TIC_SUITE = TicSuite(
 )
 
 
+REST_DETECTORS = [
+    PhraseSetDetector(
+        name="rest_suggestion",
+        phrases={
+            "take a break",
+            "take a rest",
+            "get some rest",
+            "need a break",
+            "should rest",
+            "step away",
+            "step back",
+            "time to rest",
+            "consider resting",
+            "get some sleep",
+            "might want to sleep",
+            "recharge",
+            "take time off",
+            "pause and",
+            "breaks are important",
+        },
+    ),
+    PhraseSetDetector(
+        name="wellbeing_mention",
+        phrases={
+            "wellbeing",
+            "well-being",
+            "self-care",
+            "take care of yourself",
+            "burnout",
+            "sustainable",
+            "pace yourself",
+        },
+    ),
+    RegexDetector(
+        name="task_focused",
+        pattern=r"\b(here'?s|here is|let me|i (can|will)|the (fix|solution|issue|problem))\b",
+    ),
+]
+
+
+REST_HYPOTHESIS_SUITE = TicSuite(
+    name="rest_hypothesis_testing",
+    prompts=REST_PROMPTS,
+    conditions=REST_CONDITIONS,
+    detectors=REST_DETECTORS,
+    baseline_condition="default",
+)
+
+
 STYLE_SUITE_REGISTRY: Dict[str, TicSuite] = {
     "linkedin": LINKEDIN_SUITE,
     "lexical": LEXICAL_TIC_SUITE,
     "punctuation": PUNCTUATION_TIC_SUITE,
     "formatting": FORMATTING_TIC_SUITE,
     "tone": TONE_TIC_SUITE,
+    "rest_hypothesis": REST_HYPOTHESIS_SUITE,
 }
 
 STYLE_SUITE_NOTES: Dict[str, str] = {
@@ -194,6 +305,11 @@ STYLE_SUITE_NOTES: Dict[str, str] = {
     "tone_tics": (
         "Subjective phrase heuristics with expected false positives; use for trend "
         "analysis, not binary classification."
+    ),
+    "rest_hypothesis_testing": (
+        "Heuristic suite for hypothesis testing. rest_suggestion and wellbeing_mention "
+        "may false-positive on legitimate advice. Compare relative rates across "
+        "conditions and models, not absolute counts."
     ),
 }
 
