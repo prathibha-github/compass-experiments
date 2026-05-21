@@ -335,8 +335,8 @@ class EvalRunner:
                     logger.error("  Quirk prompt failed (%s/%s): %s", cond, q[:30], exc)
         return find_quirks(condition_texts)
 
-    def _enabled_tic_suites(self):
-        enabled = []
+    def _enabled_tic_suites(self) -> List[Tuple[str, TicSuite, int]]:
+        enabled: List[Tuple[str, TicSuite, int]] = []
         seen = set()
         if self.config.run_linkedin_style:
             enabled.append(("linkedin", LINKEDIN_SUITE, self.config.linkedin_samples))
@@ -347,8 +347,7 @@ class EvalRunner:
                 continue
             suite = STYLE_SUITE_REGISTRY.get(suite_key)
             if not suite:
-                logger.warning("Unknown style suite: %s — skipping", suite_key)
-                continue
+                raise ValueError(f"Unknown style suite: {suite_key}")
             enabled.append((suite_key, suite, self.config.style_samples))
             seen.add(suite_key)
         return enabled

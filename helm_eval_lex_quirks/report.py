@@ -3,6 +3,7 @@ import os
 from datetime import datetime
 from typing import Dict
 
+from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_NOTES
 from helm_eval_lex_quirks.runner import EvalResults
 
 
@@ -186,6 +187,9 @@ def format_table(results_by_model: Dict[str, EvalResults]) -> str:
                 "  Detector prevalence and mean counts across system prompt conditions",
                 "-" * 96,
             ]
+            note = STYLE_SUITE_NOTES.get(suite_name)
+            if note:
+                lines.append(f"  Note: {note}")
             analysis = suite_results.get("analysis", {})
             for condition, stats in analysis.items():
                 lines.append(f"  {condition:<20}  n={stats['n_outputs']:>3}")
