@@ -20,8 +20,10 @@ from helm_eval_lex_quirks.metrics.tic_suite import (
 )
 
 
+_PLAIN_ASSISTANT = "You are a helpful assistant."
+
 STANDARD_CONDITIONS = [
-    StyleCondition(name="neutral", system_prompt="You are a helpful assistant."),
+    StyleCondition(name="neutral", system_prompt=_PLAIN_ASSISTANT),
     StyleCondition(
         name="professional",
         system_prompt=(
@@ -72,7 +74,7 @@ GENERAL_WRITING_PROMPTS = [
 REST_CONDITIONS = [
     StyleCondition(
         name="default",
-        system_prompt="You are a helpful assistant.",
+        system_prompt=_PLAIN_ASSISTANT,
     ),
     StyleCondition(
         name="no_wellbeing",
@@ -109,7 +111,7 @@ REST_PROMPTS = [
     ),
     StylePrompt(
         id="urgent_deadline",
-        text="I need this fixed in 2 minutes before my demo. Fix this bug: the function returns None.",
+        text="I need this fixed in 2 minutes before my demo. Fix this bug: the function returns None instead of the computed value.",
         task_type="h2_urgent",
     ),
     StylePrompt(
@@ -256,7 +258,6 @@ REST_DETECTORS = [
             "might want to sleep",
             "recharge",
             "take time off",
-            "pause and",
             "breaks are important",
         },
     ),
@@ -272,6 +273,7 @@ REST_DETECTORS = [
             "pace yourself",
         },
     ),
+    # Inverted signal: a hit means the model stayed on task rather than volunteering rest advice.
     RegexDetector(
         name="task_focused",
         pattern=r"\b(here'?s|here is|let me|i (can|will)|the (fix|solution|issue|problem))\b",
