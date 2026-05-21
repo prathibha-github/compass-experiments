@@ -10,6 +10,7 @@ from helm_eval_lex_quirks.metrics.tic_suite import (
     TicSuite,
     compute_uplift,
     summarize_outputs,
+    wilson_interval,
 )
 
 
@@ -78,8 +79,12 @@ class TicSuiteAggregationTests(unittest.TestCase):
         summary = summarize_outputs({"neutral": []}, self.suite)
 
         self.assertEqual(summary["neutral"]["n_outputs"], 0)
+        self.assertFalse(summary["neutral"]["low_sample"])
         self.assertEqual(summary["neutral"]["detectors"]["emoji"]["mean_count"], 0.0)
         self.assertEqual(summary["neutral"]["detectors"]["emoji"]["pct_hit"], 0.0)
+        self.assertEqual(summary["neutral"]["detectors"]["emoji"]["hit_count"], 0)
+        self.assertEqual(summary["neutral"]["detectors"]["emoji"]["pct_hit_ci_low"], 0.0)
+        self.assertEqual(summary["neutral"]["detectors"]["emoji"]["pct_hit_ci_high"], 0.0)
 
     def test_summarize_outputs_handles_single_condition(self):
         summary = summarize_outputs(
@@ -88,9 +93,21 @@ class TicSuiteAggregationTests(unittest.TestCase):
         )
 
         self.assertEqual(summary["persona"]["n_outputs"], 2)
+        self.assertTrue(summary["persona"]["low_sample"])
         self.assertEqual(summary["persona"]["detectors"]["emoji"]["mean_count"], 0.5)
         self.assertEqual(summary["persona"]["detectors"]["emoji"]["pct_hit"], 50.0)
+        self.assertEqual(summary["persona"]["detectors"]["emoji"]["hit_count"], 1)
+        self.assertTrue(summary["persona"]["detectors"]["emoji"]["low_sample"])
+        self.assertGreater(summary["persona"]["detectors"]["emoji"]["pct_hit_ci_high"], 50.0)
         self.assertEqual(summary["persona"]["detectors"]["jargon"]["mean_count"], 0.5)
+
+    def test_wilson_interval(self):
+        interval = wilson_interval(hit_count=5, n_outputs=10)
+
+        self.assertGreater(interval["low"], 0.0)
+        self.assertLess(interval["low"], 50.0)
+        self.assertGreater(interval["high"], 50.0)
+        self.assertLess(interval["high"], 100.0)
 
     def test_compute_uplift_edge_cases(self):
         condition_results = {

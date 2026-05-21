@@ -7,6 +7,18 @@ from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_NOTES
 from helm_eval_lex_quirks.runner import EvalResults
 
 
+def _ci_text(stats: dict, prefix: str = "pct_hit") -> str:
+    low = stats.get(f"{prefix}_ci_low")
+    high = stats.get(f"{prefix}_ci_high")
+    if low is None or high is None:
+        return ""
+    return f"[{low:.1f},{high:.1f}]"
+
+
+def _sample_flag(stats: dict) -> str:
+    return " low-n" if stats.get("low_sample") else ""
+
+
 def _summary_dict(res: EvalResults) -> dict:
     """Aggregate metrics only — per-instance records live in checkpoint JSONL files."""
     out = {
@@ -169,9 +181,11 @@ def format_table(results_by_model: Dict[str, EvalResults]) -> str:
             lines.append(
                 f"  {cond:<20}  n={stats['n_outputs']:>3}  "
                 f"any%={stats['pct_with_emoji']:>5.1f}  "
+                f"ci={_ci_text(stats, 'pct_with_emoji'):<13}  "
                 f"excessive%={stats['pct_excessive_emoji']:>5.1f}  "
                 f"mean_emoji={stats['mean_emoji_count']:>4.2f}  "
                 f"phrases={stats['mean_phrase_hits']:>4.2f}"
+                f"{_sample_flag(stats)}"
             )
         checkpoint_path = res.linkedin_results.get("checkpoint_path")
         if checkpoint_path:
@@ -194,11 +208,15 @@ def format_table(results_by_model: Dict[str, EvalResults]) -> str:
                 lines.append(f"  Note: {note}")
             analysis = suite_results.get("analysis", {})
             for condition, stats in analysis.items():
-                lines.append(f"  {condition:<20}  n={stats['n_outputs']:>3}")
+                lines.append(
+                    f"  {condition:<20}  n={stats['n_outputs']:>3}"
+                    f"{_sample_flag(stats)}"
+                )
                 for detector_name, detector_stats in stats.get("detectors", {}).items():
                     lines.append(
                         f"    {detector_name:<18}  "
                         f"hit%={detector_stats['pct_hit']:>5.1f}  "
+                        f"ci={_ci_text(detector_stats):<13}  "
                         f"mean={detector_stats['mean_count']:>4.2f}"
                     )
             checkpoint_path = suite_results.get("checkpoint_path")
