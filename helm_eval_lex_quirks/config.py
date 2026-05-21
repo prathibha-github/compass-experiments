@@ -71,6 +71,7 @@ class EvalConfig:
     style_suites: List[str]      = field(default_factory=list)
     style_only: bool             = False
     style_samples: int           = 4     # repetitions per prompt for generic tic suites
+    run_persona_transfer: bool   = False
     seed: int                    = 42
     dry_run: bool                = False
     request_interval: float      = 2.0   # seconds between API calls; increase for free-tier accounts

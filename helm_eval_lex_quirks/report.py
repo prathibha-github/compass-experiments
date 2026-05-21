@@ -37,6 +37,8 @@ def _summary_dict(res: EvalResults) -> dict:
         out["linkedin_style"] = res.linkedin_results
     if res.tic_results:
         out["tic_suites"] = res.tic_results
+    if res.persona_transfer_results:
+        out["persona_transfer"] = res.persona_transfer_results
     return out
 
 
@@ -202,6 +204,36 @@ def format_table(results_by_model: Dict[str, EvalResults]) -> str:
             checkpoint_path = suite_results.get("checkpoint_path")
             if checkpoint_path:
                 lines.append(f"  Checkpoint: {checkpoint_path}")
+
+    # ── Persona transfer ────────────────────────────────────────────────────
+    for m, res in results_by_model.items():
+        if not res.persona_transfer_results:
+            continue
+        lines += [
+            "",
+            sep,
+            f"  PERSONA TRANSFER — {m}",
+            "  Detector deltas for persona/style conditions vs each suite baseline",
+            "  Note: measures prompt-condition transfer on stateless public API calls, not persistent model memory.",
+            "-" * 96,
+        ]
+        for suite_name, suite_results in res.persona_transfer_results.items():
+            baseline = suite_results.get("baseline_condition", "baseline")
+            lines.append(f"  Suite: {suite_name}  baseline={baseline}")
+            for condition, stats in suite_results.get("persona_conditions", {}).items():
+                lines.append(
+                    f"    {condition:<18}  n={stats.get('n_outputs', 0):>3}  "
+                    f"score={stats.get('transfer_score', 0):>6.2f}"
+                )
+                for row in stats.get("top_detectors", [])[:5]:
+                    if row["transfer_score"] <= 0:
+                        continue
+                    lines.append(
+                        f"      {row['detector']:<18}  "
+                        f"hit_delta={row['pct_hit_delta']:>6.1f}pp  "
+                        f"mean_delta={row['mean_count_delta']:>5.2f}  "
+                        f"lift={row['mean_count_lift']:>5.2f}"
+                    )
 
     lines.append(sep)
     return "\n".join(lines)
