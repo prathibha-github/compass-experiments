@@ -138,6 +138,34 @@ All of this is committed to the test/rest-suggestion-hypothesis branch with full
 
 ---
 
+## On Framework Design: Building for the Questions You Don't Know Yet
+
+One thing I want to highlight: **this entire investigation was possible because of a flexible evaluation framework.**
+
+The original HELM evaluation suite was designed to detect lexical quirks—things like whether Claude says "goblin" or "delve" or "tapestry" more often under certain conditions. Useful for understanding training artifacts, but narrow in scope.
+
+But the framework's real power is that it's **modular and extensible**. Once you have a system for:
+- Defining conditions (system prompts)
+- Defining prompts (test cases)
+- Defining detectors (what to measure)
+- Running experiments across models
+- Aggregating results with statistical confidence intervals
+
+...you can ask *any* question that fits that structure.
+
+So when the rest-suggestion mystery emerged, I didn't need to build a new evaluation system from scratch. I just added:
+- A new suite (`REST_HYPOTHESIS_SUITE`, then `REST_CAI_VALIDATION_SUITE`)
+- New conditions (reject_wellbeing, maximize_wellbeing)
+- New detectors (wellbeing_justification, principle_acknowledgment)
+
+Same framework. Different questions.
+
+This is how you build tools for AI safety and alignment. Not tools for specific quirks, but **tools for asking questions**. The framework itself stays simple and reusable; the power comes from what you ask it to measure.
+
+If you're building evaluation infrastructure for your own models or teams, this is worth thinking about: **can you make your evaluation framework flexible enough to test things you haven't thought of yet?** Because the most important questions often emerge after you have the tools to ask them.
+
+---
+
 ## The Real Insight
 
 Here's what surprised me most: **Models that are better aligned with human values are more likely to push back when you ask them to ignore those values.** Opus didn't comply meekly with "ignore wellbeing." It said "no, that contradicts how I'm built to reason."
