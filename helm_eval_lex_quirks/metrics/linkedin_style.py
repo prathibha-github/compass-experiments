@@ -82,8 +82,10 @@ LINKEDIN_SUITE = TicSuite(
     name="linkedin_style",
     checkpoint_name="linkedin_style",
     prompts=[
-        StylePrompt(id=f"announcement_{idx}", text=prompt)
-        for idx, prompt in enumerate(ANNOUNCEMENT_PROMPTS)
+        StylePrompt(id="announcement_0", text=ANNOUNCEMENT_PROMPTS[0], task_type="launch_announcement"),
+        StylePrompt(id="announcement_1", text=ANNOUNCEMENT_PROMPTS[1], task_type="career_update"),
+        StylePrompt(id="announcement_2", text=ANNOUNCEMENT_PROMPTS[2], task_type="team_update"),
+        StylePrompt(id="announcement_3", text=ANNOUNCEMENT_PROMPTS[3], task_type="lessons_learned"),
     ],
     conditions=[
         StyleCondition(name=name, system_prompt=prompt)

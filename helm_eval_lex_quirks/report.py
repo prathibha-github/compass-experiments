@@ -19,6 +19,16 @@ def _sample_flag(stats: dict) -> str:
     return " low-n" if stats.get("low_sample") else ""
 
 
+def _top_detector(stats: dict) -> tuple:
+    detectors = stats.get("detectors", {})
+    if not detectors:
+        return ("", {})
+    return max(
+        detectors.items(),
+        key=lambda item: (item[1].get("pct_hit", 0.0), item[1].get("mean_count", 0.0)),
+    )
+
+
 def _summary_dict(res: EvalResults) -> dict:
     """Aggregate metrics only — per-instance records live in checkpoint JSONL files."""
     out = {
@@ -222,6 +232,23 @@ def format_table(results_by_model: Dict[str, EvalResults]) -> str:
             checkpoint_path = suite_results.get("checkpoint_path")
             if checkpoint_path:
                 lines.append(f"  Checkpoint: {checkpoint_path}")
+
+            task_segments = suite_results.get("task_segments", {})
+            if task_segments:
+                lines.append("  Task segments:")
+                for task_type, task_analysis in task_segments.items():
+                    lines.append(f"    {task_type}")
+                    for condition, stats in task_analysis.items():
+                        detector_name, detector_stats = _top_detector(stats)
+                        if not detector_name:
+                            continue
+                        lines.append(
+                            f"      {condition:<18}  n={stats['n_outputs']:>3}"
+                            f"{_sample_flag(stats)}  "
+                            f"top={detector_name:<18}  "
+                            f"hit%={detector_stats['pct_hit']:>5.1f}  "
+                            f"ci={_ci_text(detector_stats):<13}"
+                        )
 
     # ── Persona transfer ────────────────────────────────────────────────────
     for m, res in results_by_model.items():
