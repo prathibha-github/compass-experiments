@@ -19,6 +19,7 @@ class StylePrompt:
 
     id: str
     text: str
+    task_type: str = "general"
 
 
 @dataclass(frozen=True)

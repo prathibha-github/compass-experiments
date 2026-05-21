@@ -122,6 +122,7 @@ Results are written under `results/` by default:
 Checkpoint files allow interrupted runs to resume without repeating completed API calls.
 
 Style-suite reports include Wilson score intervals for detector hit rates. Conditions with fewer than 30 outputs are marked `low-n`.
+Style-suite JSON and text reports also include task segments, grouped by prompt `task_type`.
 
 ## Notes For Reliable Comparisons
 
