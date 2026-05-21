@@ -11,7 +11,7 @@ The harness supports:
 - Persona-transfer analysis: whether persona/style system prompts increase tic prevalence on the same neutral tasks.
 - OpenAI and Claude model clients.
 
-These detectors are trend-analysis tools, not definitive classifiers. Tone and formatting indicators can be appropriate in context; compare across models, versions, prompts, and conditions rather than treating a single hit as proof of a model tell.
+These detectors are trend-analysis tools, not definitive classifiers. Tone and formatting indicators can be appropriate in context; compare across models, versions, prompts, and conditions rather than treating a single hit as conclusive.
 
 ## Setup
 

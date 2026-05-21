@@ -22,7 +22,7 @@ python -m helm_eval_lex_quirks.main --api-key sk-... --linkedin-style
 # Run generic tic/style suites only
 python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite lexical punctuation tone
 
-# Add persona-transfer analysis over selected style suites
+# Run persona-transfer analysis over selected style suites
 python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite all --persona-transfer
 """
 import argparse

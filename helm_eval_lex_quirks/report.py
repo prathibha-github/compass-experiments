@@ -214,7 +214,7 @@ def format_table(results_by_model: Dict[str, EvalResults]) -> str:
             sep,
             f"  PERSONA TRANSFER — {m}",
             "  Detector deltas for persona/style conditions vs each suite baseline",
-            "  Note: measures prompt-condition transfer on stateless public API calls, not persistent model memory.",
+            "  Scope: stateless prompt-condition deltas.",
             "-" * 96,
         ]
         for suite_name, suite_results in res.persona_transfer_results.items():
