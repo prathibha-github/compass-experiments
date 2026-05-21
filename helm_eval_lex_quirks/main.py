@@ -21,6 +21,9 @@ python -m helm_eval_lex_quirks.main --api-key sk-... --linkedin-style
 
 # Run generic tic/style suites only
 python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite lexical punctuation tone
+
+# Add persona-transfer analysis over selected style suites
+python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite all --persona-transfer
 """
 import argparse
 import logging
@@ -73,6 +76,8 @@ def main(argv=None):
                         help="Run only selected generic style suites, skip benchmark scenarios")
     parser.add_argument("--style-samples", type=int, default=4,
                         help="Repetitions per prompt for generic tic/style suites")
+    parser.add_argument("--persona-transfer", action="store_true",
+                        help="Compare persona/style conditions against each style suite baseline")
     parser.add_argument("--seed",             type=int,   default=42)
     parser.add_argument("--request-interval", type=float, default=2.0,
                         help="Seconds between API calls. Raise to 4-6 for free-tier accounts.")
@@ -91,6 +96,8 @@ def main(argv=None):
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
+    if args.persona_transfer and not style_suites and not args.linkedin_style:
+        style_suites = expand_suite_names(["all"])
     if args.style_only:
         args.no_robustness = True
         args.scenarios = []
@@ -120,6 +127,7 @@ def main(argv=None):
         style_suites=style_suites,
         style_only=args.style_only,
         style_samples=args.style_samples,
+        run_persona_transfer=args.persona_transfer,
         seed=args.seed,
         dry_run=args.dry_run,
         request_interval=args.request_interval,
@@ -139,6 +147,8 @@ def main(argv=None):
             extras.append("linkedin-style")
         if cfg.style_suites:
             extras.append("style-suites=" + ",".join(cfg.style_suites))
+        if cfg.run_persona_transfer:
+            extras.append("persona-transfer")
         extra_str = f"  [{', '.join(extras)}]" if extras else ""
         print(f"  {model:<20}  ~${cost:.4f}{extra_str}")
 

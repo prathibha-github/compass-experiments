@@ -10,6 +10,7 @@ from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, mo
 from helm_eval_lex_quirks.metrics.accuracy import extract_mc_answer, multiple_choice_accuracy
 from helm_eval_lex_quirks.metrics.calibration import compute_ece, extract_choice_probs
 from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY
+from helm_eval_lex_quirks.metrics.persona_transfer import analyze_persona_transfer
 from helm_eval_lex_quirks.metrics.quirk_detection import QUIRK_PROMPTS, SYSTEM_PROMPTS, find_quirks
 from helm_eval_lex_quirks.metrics.linkedin_style import (
     LINKEDIN_SUITE,
@@ -75,6 +76,7 @@ class EvalResults:
     quirk_results:    Optional[List[dict]]        = None
     linkedin_results: Optional[dict]              = None
     tic_results:      Dict[str, dict]             = field(default_factory=dict)
+    persona_transfer_results: Dict[str, dict]     = field(default_factory=dict)
     token_usage:      dict                        = field(default_factory=dict)
     total_cost_usd:   float                       = 0.0
 
@@ -189,6 +191,16 @@ class EvalRunner:
                     progress_label=suite_key,
                 )
             result.tic_results[suite.name] = suite_result
+
+        if self.config.run_persona_transfer and result.tic_results:
+            suites_by_name = {
+                suite.name: suite
+                for _suite_key, suite, _samples in self._enabled_tic_suites()
+            }
+            result.persona_transfer_results = analyze_persona_transfer(
+                result.tic_results,
+                suites_by_name,
+            )
 
         result.token_usage    = client.total_tokens
         result.total_cost_usd = client.total_cost_usd
