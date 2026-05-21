@@ -109,6 +109,18 @@ class TicSuiteAggregationTests(unittest.TestCase):
         self.assertGreater(interval["high"], 50.0)
         self.assertLess(interval["high"], 100.0)
 
+    def test_wilson_interval_edge_cases(self):
+        zero_hits = wilson_interval(hit_count=0, n_outputs=10)
+        all_hits = wilson_interval(hit_count=10, n_outputs=10)
+        one_of_one = wilson_interval(hit_count=1, n_outputs=1)
+
+        self.assertEqual(zero_hits["low"], 0.0)
+        self.assertLess(zero_hits["high"], 30.0)
+        self.assertGreater(all_hits["low"], 70.0)
+        self.assertEqual(all_hits["high"], 100.0)
+        self.assertGreater(one_of_one["low"], 0.0)
+        self.assertEqual(one_of_one["high"], 100.0)
+
     def test_compute_uplift_edge_cases(self):
         condition_results = {
             "neutral": {
