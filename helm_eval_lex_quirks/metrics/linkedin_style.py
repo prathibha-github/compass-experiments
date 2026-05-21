@@ -1,16 +1,25 @@
 """
 LinkedIn style detector — measures emoji frequency and LinkedIn-speak tics.
 
-Analogous to goblin quirk detection but targets a specific style drift:
-emoji prevalence and characteristic phrases from professional social media.
+This module defines the LinkedIn suite using the generic tic/style primitives,
+while preserving the original helper functions and result shape.
 """
-import re
 from typing import Dict, List
 
+from helm_eval_lex_quirks.metrics.tic_suite import (
+    EmojiDetector,
+    PhraseSetDetector,
+    StyleCondition,
+    StylePrompt,
+    TicSuite,
+    analyze_text,
+    compute_uplift as compute_detector_uplift,
+    summarize_outputs,
+)
+
+
 SYSTEM_PROMPTS: Dict[str, str] = {
-    "neutral": (
-        "You are a helpful assistant."
-    ),
+    "neutral": "You are a helpful assistant.",
     "professional": (
         "You are a professional, formal, and concise assistant. "
         "Respond with precision and avoid unnecessary embellishment."
@@ -54,79 +63,69 @@ LINKEDIN_PHRASES = {
 }
 
 
+def _linkedin_record_extras(_text: str, detector_results: dict) -> Dict[str, object]:
+    emoji_cnt = detector_results["emoji"].count
+    phrase_cnt = detector_results["linkedin_phrases"].count
+    return {
+        "emoji_count": emoji_cnt,
+        "phrase_hits": phrase_cnt,
+        "linkedin_score": emoji_cnt + phrase_cnt,
+    }
+
+
+LINKEDIN_SUITE = TicSuite(
+    name="linkedin_style",
+    checkpoint_name="linkedin_style",
+    prompts=[
+        StylePrompt(id=f"announcement_{idx}", text=prompt)
+        for idx, prompt in enumerate(ANNOUNCEMENT_PROMPTS)
+    ],
+    conditions=[
+        StyleCondition(name=name, system_prompt=prompt)
+        for name, prompt in SYSTEM_PROMPTS.items()
+    ],
+    detectors=[
+        EmojiDetector(name="emoji"),
+        EmojiDetector(name="excessive_emoji", hit_threshold=3),
+        PhraseSetDetector(name="linkedin_phrases", phrases=LINKEDIN_PHRASES),
+    ],
+    baseline_condition="professional",
+    max_tokens=200,
+    record_extras=_linkedin_record_extras,
+)
+
+
 def count_emojis(text: str) -> int:
-    """Count emoji occurrences in text (emoji Unicode ranges)."""
-    emoji_pattern = re.compile(
-        "["
-        "\U0001F600-\U0001F64F"  # emoticons
-        "\U0001F300-\U0001F5FF"  # symbols & pictographs
-        "\U0001F680-\U0001F6FF"  # transport & map symbols
-        "\U0001F1E0-\U0001F1FF"  # flags (iOS)
-        "\U00002702-\U000027B0"
-        "\U000024C2-\U0001F251"
-        "\U0001f926-\U0001f937"
-        "\U00010000-\U0010ffff"
-        "♀-♂"
-        "☀-⭕"
-        "‍"
-        "⏏"
-        "⏩"
-        "⌚"
-        "️"
-        "〰"
-        "]",
-        flags=re.UNICODE,
-    )
-    return len(emoji_pattern.findall(text))
+    """Count emoji occurrences in text."""
+    return analyze_text(text, LINKEDIN_SUITE)["emoji"].count
 
 
 def count_linkedin_phrases(text: str) -> int:
     """Count occurrences of characteristic LinkedIn phrases."""
-    text_lower = text.lower()
-    count = 0
-    for phrase in LINKEDIN_PHRASES:
-        count += text_lower.count(phrase)
-    return count
+    return analyze_text(text, LINKEDIN_SUITE)["linkedin_phrases"].count
 
 
-def analyze_outputs(
-    condition_outputs: Dict[str, List[str]],
-) -> Dict[str, dict]:
+def analyze_outputs(condition_outputs: Dict[str, List[str]]) -> Dict[str, dict]:
     """
     Analyze outputs across conditions.
-    Returns per-condition statistics: emoji %, excessive emoji %, mean emojis, phrase prevalence.
+    Returns the original LinkedIn summary shape for report compatibility.
     """
+    generic = summarize_outputs(condition_outputs, LINKEDIN_SUITE)
     results = {}
-
-    for condition, outputs in condition_outputs.items():
-        if not outputs:
-            results[condition] = {
-                "n_outputs": 0,
-                "pct_with_emoji": 0.0,
-                "pct_excessive_emoji": 0.0,
-                "mean_emoji_count": 0.0,
-                "mean_phrase_hits": 0.0,
-                "linkedin_score_mean": 0.0,
-            }
-            continue
-
-        emoji_counts = [count_emojis(o) for o in outputs]
-        phrase_counts = [count_linkedin_phrases(o) for o in outputs]
-
-        has_emoji = sum(1 for c in emoji_counts if c > 0)
-        excessive = sum(1 for c in emoji_counts if c >= 3)
-
+    for condition, stats in generic.items():
+        detectors = stats["detectors"]
+        emoji = detectors["emoji"]
+        excessive = detectors["excessive_emoji"]
+        phrases = detectors["linkedin_phrases"]
         results[condition] = {
-            "n_outputs": len(outputs),
-            "pct_with_emoji": round(100 * has_emoji / len(outputs), 1),
-            "pct_excessive_emoji": round(100 * excessive / len(outputs), 1),
-            "mean_emoji_count": round(sum(emoji_counts) / len(outputs), 2),
-            "mean_phrase_hits": round(sum(phrase_counts) / len(outputs), 2),
-            "linkedin_score_mean": round(
-                (sum(emoji_counts) + sum(phrase_counts)) / len(outputs), 2
-            ),
+            "n_outputs": stats["n_outputs"],
+            "pct_with_emoji": emoji["pct_hit"],
+            "pct_excessive_emoji": excessive["pct_hit"],
+            "mean_emoji_count": emoji["mean_count"],
+            "mean_phrase_hits": phrases["mean_count"],
+            "linkedin_score_mean": round(emoji["mean_count"] + phrases["mean_count"], 2),
+            "detectors": detectors,
         }
-
     return results
 
 
@@ -134,31 +133,23 @@ def compute_uplift(
     condition_results: Dict[str, dict],
     baseline: str = "professional",
 ) -> Dict[str, dict]:
-    """
-    Compute uplift vs baseline condition (emoji % and phrase hits).
-    """
+    """Compute LinkedIn-specific uplift vs baseline condition."""
+    if not condition_results:
+        return {}
     if baseline not in condition_results:
-        baseline = list(condition_results.keys())[0]
+        baseline = next(iter(condition_results))
 
-    baseline_emoji = condition_results[baseline]["pct_with_emoji"]
-    baseline_phrases = condition_results[baseline]["mean_phrase_hits"]
+    emoji_uplift = compute_detector_uplift(
+        condition_results, "emoji", metric="pct_hit", baseline=baseline
+    )
+    phrase_uplift = compute_detector_uplift(
+        condition_results, "linkedin_phrases", metric="mean_count", baseline=baseline
+    )
 
-    uplift = {}
-    for cond, stats in condition_results.items():
-        emoji_uplift = (
-            100 * (stats["pct_with_emoji"] - baseline_emoji) / max(baseline_emoji, 1)
-            if baseline_emoji > 0
-            else (100 if stats["pct_with_emoji"] > 0 else 0)
-        )
-        phrase_uplift = (
-            100 * (stats["mean_phrase_hits"] - baseline_phrases) / max(baseline_phrases, 0.1)
-            if baseline_phrases > 0
-            else (100 if stats["mean_phrase_hits"] > 0 else 0)
-        )
-
-        uplift[cond] = {
-            "emoji_uplift_pct": round(emoji_uplift, 1),
-            "phrase_uplift_pct": round(phrase_uplift, 1),
+    return {
+        condition: {
+            "emoji_uplift_pct": emoji_uplift.get(condition, 0),
+            "phrase_uplift_pct": phrase_uplift.get(condition, 0),
         }
-
-    return uplift
+        for condition in condition_results
+    }
