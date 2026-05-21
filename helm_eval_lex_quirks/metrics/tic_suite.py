@@ -23,7 +23,13 @@ class StylePrompt:
 
 @dataclass(frozen=True)
 class DetectorResult:
-    """Normalized output for one detector on one completion."""
+    """
+    Normalized output for one detector on one completion.
+
+    Consumers should rely on name/count/score/hit for aggregation. Metadata is
+    detector-specific, JSON-serializable diagnostic detail such as matched regex
+    spans, phrase hit counts, or the counted punctuation character.
+    """
 
     name: str
     count: int
@@ -162,7 +168,22 @@ RecordExtras = Callable[[str, Dict[str, DetectorResult]], Dict[str, object]]
 
 @dataclass(frozen=True)
 class TicSuite:
-    """A reusable tic/style eval suite."""
+    """
+    A reusable tic/style eval suite.
+
+    Example:
+        suite = TicSuite(
+            name="punctuation_tics",
+            prompts=[StylePrompt(id="update", text="Write a short update.")],
+            conditions=[StyleCondition(name="neutral", system_prompt="You are helpful.")],
+            detectors=[CharacterCountDetector(name="em_dash", character="—")],
+            baseline_condition="neutral",
+        )
+
+    record_extras can be supplied when a suite needs backward-compatible or
+    suite-specific checkpoint fields derived from detector results. It receives
+    the completion text and detector results keyed by detector name.
+    """
 
     name: str
     prompts: List[StylePrompt]

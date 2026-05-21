@@ -2,7 +2,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
@@ -26,6 +26,9 @@ from helm_eval_lex_quirks.scenarios.mmlu import MMLUScenario
 from helm_eval_lex_quirks.scenarios.truthfulqa import TruthfulQAScenario
 
 logger = logging.getLogger(__name__)
+TIC_CHECKPOINT_SCHEMA_VERSION = 1
+TicAnalyzeFn = Callable[[Dict[str, List[str]]], Dict[str, dict]]
+TicUpliftFn = Callable[[Dict[str, dict], str], Dict[str, dict]]
 
 SCENARIO_REGISTRY: Dict[str, type] = {
     "mmlu":       MMLUScenario,
@@ -341,8 +344,8 @@ class EvalRunner:
         suite: TicSuite,
         samples: int,
         progress_label: Optional[str] = None,
-        analyze_fn=None,
-        uplift_fn=None,
+        analyze_fn: Optional[TicAnalyzeFn] = None,
+        uplift_fn: Optional[TicUpliftFn] = None,
     ) -> dict:
         condition_outputs: Dict[str, List[str]] = {c.name: [] for c in suite.conditions}
         safe_model = model_name.replace("/", "_").replace(":", "_")
@@ -353,29 +356,9 @@ class EvalRunner:
         )
         os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
 
-        # Load checkpoint and track which (condition, prompt_idx, sample_idx) are done
-        done: Dict[tuple, dict] = {}
-        if os.path.exists(ckpt_path):
-            with open(ckpt_path) as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        rec = json.loads(line)
-                        key = (rec["condition"], rec["prompt_idx"], rec["sample_idx"])
-                        done[key] = rec
-                        if rec["condition"] in condition_outputs:
-                            condition_outputs[rec["condition"]].append(rec["completion"])
-                    except (json.JSONDecodeError, KeyError):
-                        pass
-            if done:
-                logger.info(
-                    "    Resumed %d checkpointed %s records from %s",
-                    len(done),
-                    suite.name,
-                    ckpt_path,
-                )
+        done, resumed_outputs = self._load_tic_checkpoint(ckpt_path, suite)
+        for condition, outputs in resumed_outputs.items():
+            condition_outputs[condition].extend(outputs)
 
         total_calls = len(suite.prompts) * len(suite.conditions) * samples
         pbar = tqdm(total=total_calls, desc=progress_label or suite.name, leave=False)
@@ -401,6 +384,7 @@ class EvalRunner:
                             detector_results = analyze_text(completion, suite)
 
                             record = {
+                                "schema_version": TIC_CHECKPOINT_SCHEMA_VERSION,
                                 "model": model_name,
                                 "suite": suite.name,
                                 "condition": condition.name,
@@ -431,7 +415,7 @@ class EvalRunner:
             analyze_fn(condition_outputs) if analyze_fn else summarize_outputs(condition_outputs, suite)
         )
         uplift = (
-            uplift_fn(analysis, baseline=suite.baseline_condition)
+            uplift_fn(analysis, suite.baseline_condition)
             if uplift_fn
             else {}
         )
@@ -441,3 +425,91 @@ class EvalRunner:
             "uplift": uplift,
             "checkpoint_path": ckpt_path,
         }
+
+    @staticmethod
+    def _load_tic_checkpoint(
+        path: str,
+        suite: TicSuite,
+    ) -> Tuple[Dict[tuple, dict], Dict[str, List[str]]]:
+        """
+        Load tic-suite checkpoint records.
+
+        Schema v1 records include schema_version, suite, prompt_id, and
+        normalized detectors. Records without schema_version are treated as
+        legacy v0 LinkedIn records and are accepted if they contain the minimal
+        resumption keys used by the original checkpoint format.
+        """
+        done: Dict[tuple, dict] = {}
+        condition_outputs: Dict[str, List[str]] = {c.name: [] for c in suite.conditions}
+        valid_conditions = set(condition_outputs)
+
+        if not os.path.exists(path):
+            return done, condition_outputs
+
+        skipped = 0
+        with open(path) as f:
+            for line_no, line in enumerate(f, start=1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    skipped += 1
+                    logger.warning("Skipping corrupt tic checkpoint line %s:%d", path, line_no)
+                    continue
+
+                version = rec.get("schema_version", 0)
+                if version not in (0, TIC_CHECKPOINT_SCHEMA_VERSION):
+                    skipped += 1
+                    logger.warning(
+                        "Skipping unsupported tic checkpoint schema v%s at %s:%d",
+                        version,
+                        path,
+                        line_no,
+                    )
+                    continue
+
+                try:
+                    condition = rec["condition"]
+                    key = (condition, rec["prompt_idx"], rec["sample_idx"])
+                    completion = rec["completion"]
+                except KeyError as exc:
+                    skipped += 1
+                    logger.warning(
+                        "Skipping malformed tic checkpoint line %s:%d missing %s",
+                        path,
+                        line_no,
+                        exc,
+                    )
+                    continue
+
+                if condition not in valid_conditions:
+                    skipped += 1
+                    logger.warning(
+                        "Skipping tic checkpoint line %s:%d with unknown condition %r",
+                        path,
+                        line_no,
+                        condition,
+                    )
+                    continue
+
+                if version == TIC_CHECKPOINT_SCHEMA_VERSION and rec.get("suite") != suite.name:
+                    skipped += 1
+                    logger.warning(
+                        "Skipping tic checkpoint line %s:%d for suite %r while loading %r",
+                        path,
+                        line_no,
+                        rec.get("suite"),
+                        suite.name,
+                    )
+                    continue
+
+                done[key] = rec
+                condition_outputs[condition].append(completion)
+
+        if done:
+            logger.info("    Resumed %d checkpointed %s records from %s", len(done), suite.name, path)
+        if skipped:
+            logger.warning("    Skipped %d incompatible %s checkpoint records", skipped, suite.name)
+        return done, condition_outputs

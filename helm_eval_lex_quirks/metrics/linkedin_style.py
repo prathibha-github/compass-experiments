@@ -64,6 +64,11 @@ LINKEDIN_PHRASES = {
 
 
 def _linkedin_record_extras(_text: str, detector_results: dict) -> Dict[str, object]:
+    required = {"emoji", "linkedin_phrases"}
+    missing = required - set(detector_results)
+    if missing:
+        raise KeyError(f"LinkedIn suite missing required detectors: {sorted(missing)}")
+
     emoji_cnt = detector_results["emoji"].count
     phrase_cnt = detector_results["linkedin_phrases"].count
     return {
@@ -107,8 +112,10 @@ def count_linkedin_phrases(text: str) -> int:
 
 def analyze_outputs(condition_outputs: Dict[str, List[str]]) -> Dict[str, dict]:
     """
-    Analyze outputs across conditions.
-    Returns the original LinkedIn summary shape for report compatibility.
+    Analyze outputs across conditions using the generic TicSuite summarizer.
+
+    This intentionally reconstructs the original LinkedIn result shape so
+    existing reports and saved JSON consumers keep working during the refactor.
     """
     generic = summarize_outputs(condition_outputs, LINKEDIN_SUITE)
     results = {}
