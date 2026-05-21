@@ -18,6 +18,9 @@ python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-
 
 # Run LinkedIn style detection
 python -m helm_eval_lex_quirks.main --api-key sk-... --linkedin-style
+
+# Run generic tic/style suites only
+python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite lexical punctuation tone
 """
 import argparse
 import logging
@@ -31,6 +34,7 @@ logging.basicConfig(
 )
 
 from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, model_provider
+from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY, expand_suite_names
 from helm_eval_lex_quirks.runner import SCENARIO_REGISTRY, EvalRunner
 from helm_eval_lex_quirks import report as rpt
 
@@ -62,6 +66,13 @@ def main(argv=None):
                         help="Run only LinkedIn style detection, skip benchmark scenarios")
     parser.add_argument("--linkedin-samples", type=int, default=4,
                         help="Repetitions per prompt for LinkedIn style detection")
+    parser.add_argument("--style-suite", nargs="+", default=[],
+                        choices=list(STYLE_SUITE_REGISTRY) + ["all"],
+                        help="Run generic tic/style suite(s): lexical, punctuation, formatting, tone, linkedin, or all")
+    parser.add_argument("--style-only", action="store_true",
+                        help="Run only selected generic style suites, skip benchmark scenarios")
+    parser.add_argument("--style-samples", type=int, default=4,
+                        help="Repetitions per prompt for generic tic/style suites")
     parser.add_argument("--seed",             type=int,   default=42)
     parser.add_argument("--request-interval", type=float, default=2.0,
                         help="Seconds between API calls. Raise to 4-6 for free-tier accounts.")
@@ -75,6 +86,17 @@ def main(argv=None):
         args.no_robustness = True
         args.scenarios = []
 
+    try:
+        style_suites = expand_suite_names(args.style_suite)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+    if args.style_only:
+        args.no_robustness = True
+        args.scenarios = []
+        if not style_suites:
+            print("ERROR: --style-only requires at least one --style-suite.", file=sys.stderr)
+            sys.exit(1)
     providers = {model_provider(model) for model in args.models}
     if "openai" in providers and not args.api_key:
         print("ERROR: OpenAI models require --api-key or OPENAI_API_KEY.", file=sys.stderr)
@@ -95,6 +117,9 @@ def main(argv=None):
         run_linkedin_style=args.linkedin_style,
         linkedin_only=args.linkedin_only,
         linkedin_samples=args.linkedin_samples,
+        style_suites=style_suites,
+        style_only=args.style_only,
+        style_samples=args.style_samples,
         seed=args.seed,
         dry_run=args.dry_run,
         request_interval=args.request_interval,
@@ -110,8 +135,10 @@ def main(argv=None):
             extras.append("robustness")
         if cfg.run_quirk_detection:
             extras.append("quirk-detection")
-        if cfg.run_linkedin_style:
+        if cfg.run_linkedin_style and "linkedin" not in cfg.style_suites:
             extras.append("linkedin-style")
+        if cfg.style_suites:
+            extras.append("style-suites=" + ",".join(cfg.style_suites))
         extra_str = f"  [{', '.join(extras)}]" if extras else ""
         print(f"  {model:<20}  ~${cost:.4f}{extra_str}")
 
