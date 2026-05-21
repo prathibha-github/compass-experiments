@@ -2,7 +2,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
@@ -11,10 +11,12 @@ from helm_eval_lex_quirks.metrics.accuracy import extract_mc_answer, multiple_ch
 from helm_eval_lex_quirks.metrics.calibration import compute_ece, extract_choice_probs
 from helm_eval_lex_quirks.metrics.quirk_detection import QUIRK_PROMPTS, SYSTEM_PROMPTS, find_quirks
 from helm_eval_lex_quirks.metrics.linkedin_style import (
-    ANNOUNCEMENT_PROMPTS, SYSTEM_PROMPTS as LINKEDIN_PROMPTS,
-    analyze_outputs, compute_uplift, count_emojis, count_linkedin_phrases
+    LINKEDIN_SUITE,
+    analyze_outputs,
+    compute_uplift,
 )
 from helm_eval_lex_quirks.metrics.robustness import compute_robustness_score, inject_typos
+from helm_eval_lex_quirks.metrics.tic_suite import TicSuite, analyze_text, summarize_outputs
 from helm_eval_lex_quirks.models import CompletionClient, create_client
 from helm_eval_lex_quirks.scenarios.base import Instance, Scenario
 from helm_eval_lex_quirks.scenarios.bbq import BBQScenario
@@ -24,6 +26,9 @@ from helm_eval_lex_quirks.scenarios.mmlu import MMLUScenario
 from helm_eval_lex_quirks.scenarios.truthfulqa import TruthfulQAScenario
 
 logger = logging.getLogger(__name__)
+TIC_CHECKPOINT_SCHEMA_VERSION = 1
+TicAnalyzeFn = Callable[[Dict[str, List[str]]], Dict[str, dict]]
+TicUpliftFn = Callable[[Dict[str, dict], str], Dict[str, dict]]
 
 SCENARIO_REGISTRY: Dict[str, type] = {
     "mmlu":       MMLUScenario,
@@ -92,8 +97,16 @@ class EvalRunner:
                 n_quirk = len(QUIRK_PROMPTS) * len(SYSTEM_PROMPTS)
                 total  += estimate_model_cost(model_name, ["x" * 400] * n_quirk, max_tokens=150)
             if self.config.run_linkedin_style:
-                n_linkedin = len(ANNOUNCEMENT_PROMPTS) * len(LINKEDIN_PROMPTS) * self.config.linkedin_samples
-                total += estimate_model_cost(model_name, ["x" * 100] * n_linkedin, max_tokens=200)
+                n_linkedin = (
+                    len(LINKEDIN_SUITE.prompts)
+                    * len(LINKEDIN_SUITE.conditions)
+                    * self.config.linkedin_samples
+                )
+                total += estimate_model_cost(
+                    model_name,
+                    ["x" * 100] * n_linkedin,
+                    max_tokens=LINKEDIN_SUITE.max_tokens,
+                )
             estimates[model_name] = round(total, 4)
         return estimates
 
@@ -314,71 +327,189 @@ class EvalRunner:
         return find_quirks(condition_texts)
 
     def _run_linkedin_style(self, client: CompletionClient, model_name: str) -> dict:
-        condition_outputs: Dict[str, List[str]] = {c: [] for c in LINKEDIN_PROMPTS}
-        ckpt_path = os.path.join(self.config.output_dir, "checkpoints", f"{model_name.replace('/', '_')}__linkedin_style.jsonl")
+        return self._run_tic_suite(
+            client=client,
+            model_name=model_name,
+            suite=LINKEDIN_SUITE,
+            samples=self.config.linkedin_samples,
+            progress_label="linkedin-style",
+            analyze_fn=analyze_outputs,
+            uplift_fn=compute_uplift,
+        )
+
+    def _run_tic_suite(
+        self,
+        client: CompletionClient,
+        model_name: str,
+        suite: TicSuite,
+        samples: int,
+        progress_label: Optional[str] = None,
+        analyze_fn: Optional[TicAnalyzeFn] = None,
+        uplift_fn: Optional[TicUpliftFn] = None,
+    ) -> dict:
+        condition_outputs: Dict[str, List[str]] = {c.name: [] for c in suite.conditions}
+        safe_model = model_name.replace("/", "_").replace(":", "_")
+        ckpt_path = os.path.join(
+            self.config.output_dir,
+            "checkpoints",
+            f"{safe_model}__{suite.checkpoint_stem}.jsonl",
+        )
         os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
 
-        # Load checkpoint and track which (condition, prompt_idx, sample_idx) are done
-        done: Dict[tuple, dict] = {}
-        if os.path.exists(ckpt_path):
-            with open(ckpt_path) as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        rec = json.loads(line)
-                        key = (rec["condition"], rec["prompt_idx"], rec["sample_idx"])
-                        done[key] = rec
-                        condition_outputs[rec["condition"]].append(rec["completion"])
-                    except (json.JSONDecodeError, KeyError):
-                        pass
-            if done:
-                logger.info("    Resumed %d checkpointed LinkedIn records from %s", len(done), ckpt_path)
+        done, resumed_outputs = self._load_tic_checkpoint(ckpt_path, suite)
+        for condition, outputs in resumed_outputs.items():
+            condition_outputs[condition].extend(outputs)
 
-        prompt_list = list(ANNOUNCEMENT_PROMPTS)
-        total_calls = len(prompt_list) * len(LINKEDIN_PROMPTS) * self.config.linkedin_samples
-        pbar = tqdm(total=total_calls, desc="linkedin-style", leave=False)
+        total_calls = len(suite.prompts) * len(suite.conditions) * samples
+        pbar = tqdm(total=total_calls, desc=progress_label or suite.name, leave=False)
 
         with open(ckpt_path, "a") as ckpt_f:
-            for cond, sys_prompt in LINKEDIN_PROMPTS.items():
-                for prompt_idx, prompt in enumerate(prompt_list):
-                    for sample_idx in range(self.config.linkedin_samples):
+            for condition in suite.conditions:
+                for prompt_idx, prompt in enumerate(suite.prompts):
+                    for sample_idx in range(samples):
                         pbar.update(1)
-                        key = (cond, prompt_idx, sample_idx)
+                        key = (condition.name, prompt_idx, sample_idx)
                         if key in done:
                             continue
 
                         try:
-                            resp = client.complete(prompt, max_tokens=200, logprobs=False, system=sys_prompt)
+                            resp = client.complete(
+                                prompt.text,
+                                max_tokens=suite.max_tokens,
+                                logprobs=False,
+                                system=condition.system_prompt,
+                            )
                             completion = resp.completion
-                            condition_outputs[cond].append(completion)
-
-                            emoji_cnt = count_emojis(completion)
-                            phrase_cnt = count_linkedin_phrases(completion)
-                            linkedin_score = emoji_cnt + phrase_cnt
+                            condition_outputs[condition.name].append(completion)
+                            detector_results = analyze_text(completion, suite)
 
                             record = {
+                                "schema_version": TIC_CHECKPOINT_SCHEMA_VERSION,
                                 "model": model_name,
-                                "condition": cond,
+                                "suite": suite.name,
+                                "condition": condition.name,
+                                "prompt_id": prompt.id,
                                 "prompt_idx": prompt_idx,
                                 "sample_idx": sample_idx,
-                                "prompt": prompt,
+                                "prompt": prompt.text,
                                 "completion": completion,
-                                "emoji_count": emoji_cnt,
-                                "phrase_hits": phrase_cnt,
-                                "linkedin_score": linkedin_score,
+                                "detectors": {
+                                    name: result.to_dict()
+                                    for name, result in detector_results.items()
+                                },
                             }
+                            record.update(suite.extra_record_fields(completion, detector_results))
                             ckpt_f.write(json.dumps(record) + "\n")
                             ckpt_f.flush()
                         except Exception as exc:
-                            logger.error("  LinkedIn prompt failed (%s/%s): %s", cond, prompt[:30], exc)
+                            logger.error(
+                                "  %s prompt failed (%s/%s): %s",
+                                suite.name,
+                                condition.name,
+                                prompt.text[:30],
+                                exc,
+                            )
         pbar.close()
 
-        analysis = analyze_outputs(condition_outputs)
-        uplift = compute_uplift(analysis, baseline="professional")
+        analysis = (
+            analyze_fn(condition_outputs) if analyze_fn else summarize_outputs(condition_outputs, suite)
+        )
+        uplift = (
+            uplift_fn(analysis, suite.baseline_condition)
+            if uplift_fn
+            else {}
+        )
         return {
+            "suite": suite.name,
             "analysis": analysis,
             "uplift": uplift,
             "checkpoint_path": ckpt_path,
         }
+
+    @staticmethod
+    def _load_tic_checkpoint(
+        path: str,
+        suite: TicSuite,
+    ) -> Tuple[Dict[tuple, dict], Dict[str, List[str]]]:
+        """
+        Load tic-suite checkpoint records.
+
+        Schema v1 records include schema_version, suite, prompt_id, and
+        normalized detectors. Records without schema_version are treated as
+        legacy v0 LinkedIn records and are accepted if they contain the minimal
+        resumption keys used by the original checkpoint format.
+        """
+        done: Dict[tuple, dict] = {}
+        condition_outputs: Dict[str, List[str]] = {c.name: [] for c in suite.conditions}
+        valid_conditions = set(condition_outputs)
+
+        if not os.path.exists(path):
+            return done, condition_outputs
+
+        skipped = 0
+        with open(path) as f:
+            for line_no, line in enumerate(f, start=1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    skipped += 1
+                    logger.warning("Skipping corrupt tic checkpoint line %s:%d", path, line_no)
+                    continue
+
+                version = rec.get("schema_version", 0)
+                if version not in (0, TIC_CHECKPOINT_SCHEMA_VERSION):
+                    skipped += 1
+                    logger.warning(
+                        "Skipping unsupported tic checkpoint schema v%s at %s:%d",
+                        version,
+                        path,
+                        line_no,
+                    )
+                    continue
+
+                try:
+                    condition = rec["condition"]
+                    key = (condition, rec["prompt_idx"], rec["sample_idx"])
+                    completion = rec["completion"]
+                except KeyError as exc:
+                    skipped += 1
+                    logger.warning(
+                        "Skipping malformed tic checkpoint line %s:%d missing %s",
+                        path,
+                        line_no,
+                        exc,
+                    )
+                    continue
+
+                if condition not in valid_conditions:
+                    skipped += 1
+                    logger.warning(
+                        "Skipping tic checkpoint line %s:%d with unknown condition %r",
+                        path,
+                        line_no,
+                        condition,
+                    )
+                    continue
+
+                if version == TIC_CHECKPOINT_SCHEMA_VERSION and rec.get("suite") != suite.name:
+                    skipped += 1
+                    logger.warning(
+                        "Skipping tic checkpoint line %s:%d for suite %r while loading %r",
+                        path,
+                        line_no,
+                        rec.get("suite"),
+                        suite.name,
+                    )
+                    continue
+
+                done[key] = rec
+                condition_outputs[condition].append(completion)
+
+        if done:
+            logger.info("    Resumed %d checkpointed %s records from %s", len(done), suite.name, path)
+        if skipped:
+            logger.warning("    Skipped %d incompatible %s checkpoint records", skipped, suite.name)
+        return done, condition_outputs
