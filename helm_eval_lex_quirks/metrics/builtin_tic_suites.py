@@ -1,5 +1,12 @@
-"""Built-in tic/style suites for public API output evaluations."""
-from typing import Dict
+"""
+Built-in tic/style suites for public API output evaluations.
+
+These suites are heuristic trend detectors, not definitive classifiers. Tone
+and formatting suites intentionally measure indicators that can be legitimate
+in context; use them for cross-model or cross-condition prevalence comparisons,
+not as binary proof of a model "tell."
+"""
+from typing import Dict, List
 
 from helm_eval_lex_quirks.metrics.linkedin_style import LINKEDIN_SUITE
 from helm_eval_lex_quirks.metrics.tic_suite import (
@@ -175,13 +182,26 @@ STYLE_SUITE_REGISTRY: Dict[str, TicSuite] = {
     "tone": TONE_TIC_SUITE,
 }
 
+STYLE_SUITE_NOTES: Dict[str, str] = {
+    "formatting_tics": (
+        "Structure indicators only; headings, tables, lists, and trailing questions "
+        "can be appropriate depending on the prompt."
+    ),
+    "tone_tics": (
+        "Subjective phrase heuristics with expected false positives; use for trend "
+        "analysis, not binary classification."
+    ),
+}
 
-def expand_suite_names(names):
+
+def expand_suite_names(names: List[str]) -> List[str]:
     """Expand user-facing aliases into concrete registry keys."""
-    expanded = []
+    expanded: List[str] = []
     for name in names:
         if name == "all":
             expanded.extend(k for k in STYLE_SUITE_REGISTRY if k != "linkedin")
+        elif name not in STYLE_SUITE_REGISTRY:
+            raise ValueError(f"Unknown style suite: {name}")
         else:
             expanded.append(name)
     return expanded

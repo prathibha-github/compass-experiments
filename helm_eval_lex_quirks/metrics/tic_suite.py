@@ -79,18 +79,18 @@ class RegexDetector(TicDetector):
 
 @dataclass(frozen=True)
 class PhraseSetDetector(TicDetector):
-    """Count case-insensitive phrase occurrences from a fixed phrase set."""
+    """Count case-insensitive whole-phrase occurrences from a fixed phrase set."""
 
     name: str
     phrases: Iterable[str]
     hit_threshold: int = 1
 
     def detect(self, text: str) -> DetectorResult:
-        text_lower = text.lower()
         phrase_hits: Dict[str, int] = {}
         total = 0
         for phrase in self.phrases:
-            count = text_lower.count(phrase.lower())
+            pattern = rf"\b{re.escape(phrase)}\b"
+            count = len(re.findall(pattern, text, flags=re.IGNORECASE))
             if count:
                 phrase_hits[phrase] = count
                 total += count

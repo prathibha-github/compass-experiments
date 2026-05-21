@@ -86,7 +86,11 @@ def main(argv=None):
         args.no_robustness = True
         args.scenarios = []
 
-    style_suites = expand_suite_names(args.style_suite)
+    try:
+        style_suites = expand_suite_names(args.style_suite)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
     if args.style_only:
         args.no_robustness = True
         args.scenarios = []
