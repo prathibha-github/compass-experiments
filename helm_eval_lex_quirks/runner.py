@@ -9,6 +9,7 @@ from tqdm import tqdm
 from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, model_config
 from helm_eval_lex_quirks.metrics.accuracy import extract_mc_answer, multiple_choice_accuracy
 from helm_eval_lex_quirks.metrics.calibration import compute_ece, extract_choice_probs
+from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY
 from helm_eval_lex_quirks.metrics.quirk_detection import QUIRK_PROMPTS, SYSTEM_PROMPTS, find_quirks
 from helm_eval_lex_quirks.metrics.linkedin_style import (
     LINKEDIN_SUITE,
@@ -73,6 +74,7 @@ class EvalResults:
     scenario_results: Dict[str, ScenarioResults] = field(default_factory=dict)
     quirk_results:    Optional[List[dict]]        = None
     linkedin_results: Optional[dict]              = None
+    tic_results:      Dict[str, dict]             = field(default_factory=dict)
     token_usage:      dict                        = field(default_factory=dict)
     total_cost_usd:   float                       = 0.0
 
@@ -96,16 +98,12 @@ class EvalRunner:
             if self.config.run_quirk_detection:
                 n_quirk = len(QUIRK_PROMPTS) * len(SYSTEM_PROMPTS)
                 total  += estimate_model_cost(model_name, ["x" * 400] * n_quirk, max_tokens=150)
-            if self.config.run_linkedin_style:
-                n_linkedin = (
-                    len(LINKEDIN_SUITE.prompts)
-                    * len(LINKEDIN_SUITE.conditions)
-                    * self.config.linkedin_samples
-                )
+            for _suite_key, suite, samples in self._enabled_tic_suites():
+                n_calls = len(suite.prompts) * len(suite.conditions) * samples
                 total += estimate_model_cost(
                     model_name,
-                    ["x" * 100] * n_linkedin,
-                    max_tokens=LINKEDIN_SUITE.max_tokens,
+                    ["x" * 100] * n_calls,
+                    max_tokens=suite.max_tokens,
                 )
             estimates[model_name] = round(total, 4)
         return estimates
@@ -150,7 +148,7 @@ class EvalRunner:
     def _run_model(self, client: CompletionClient, model_name: str) -> EvalResults:
         result = EvalResults(model=model_name)
 
-        if not self.config.linkedin_only:
+        if not self.config.linkedin_only and not self.config.style_only:
             for sname in self.config.scenarios:
                 if sname not in SCENARIO_REGISTRY:
                     logger.warning("Unknown scenario: %s — skipping", sname)
@@ -177,9 +175,20 @@ class EvalRunner:
             logger.info("  Quirk detection...")
             result.quirk_results = self._run_quirk_detection(client)
 
-        if self.config.run_linkedin_style:
-            logger.info("  LinkedIn style detection...")
-            result.linkedin_results = self._run_linkedin_style(client, model_name)
+        for suite_key, suite, samples in self._enabled_tic_suites():
+            logger.info("  Style suite: %s", suite_key)
+            if suite_key == "linkedin":
+                suite_result = self._run_linkedin_style(client, model_name, samples=samples)
+                result.linkedin_results = suite_result
+            else:
+                suite_result = self._run_tic_suite(
+                    client=client,
+                    model_name=model_name,
+                    suite=suite,
+                    samples=samples,
+                    progress_label=suite_key,
+                )
+            result.tic_results[suite.name] = suite_result
 
         result.token_usage    = client.total_tokens
         result.total_cost_usd = client.total_cost_usd
@@ -326,12 +335,35 @@ class EvalRunner:
                     logger.error("  Quirk prompt failed (%s/%s): %s", cond, q[:30], exc)
         return find_quirks(condition_texts)
 
-    def _run_linkedin_style(self, client: CompletionClient, model_name: str) -> dict:
+    def _enabled_tic_suites(self):
+        enabled = []
+        seen = set()
+        if self.config.run_linkedin_style:
+            enabled.append(("linkedin", LINKEDIN_SUITE, self.config.linkedin_samples))
+            seen.add("linkedin")
+
+        for suite_key in self.config.style_suites:
+            if suite_key in seen:
+                continue
+            suite = STYLE_SUITE_REGISTRY.get(suite_key)
+            if not suite:
+                logger.warning("Unknown style suite: %s — skipping", suite_key)
+                continue
+            enabled.append((suite_key, suite, self.config.style_samples))
+            seen.add(suite_key)
+        return enabled
+
+    def _run_linkedin_style(
+        self,
+        client: CompletionClient,
+        model_name: str,
+        samples: Optional[int] = None,
+    ) -> dict:
         return self._run_tic_suite(
             client=client,
             model_name=model_name,
             suite=LINKEDIN_SUITE,
-            samples=self.config.linkedin_samples,
+            samples=samples or self.config.linkedin_samples,
             progress_label="linkedin-style",
             analyze_fn=analyze_outputs,
             uplift_fn=compute_uplift,
