@@ -1,4 +1,4 @@
-"""Persona-transfer analysis over tic-suite summaries."""
+"""Persona-transfer scoring for tic-suite summaries."""
 from typing import Dict, List
 
 from helm_eval_lex_quirks.metrics.tic_suite import TicSuite
@@ -13,13 +13,7 @@ def analyze_persona_transfer(
     suite_results: Dict[str, dict],
     suites_by_name: Dict[str, TicSuite],
 ) -> Dict[str, dict]:
-    """
-    Compare persona/style conditions against each suite baseline.
-
-    This measures whether a persona condition increases tic prevalence on the
-    same neutral task prompts. It does not claim persistent cross-session model
-    state; public API calls are stateless unless the caller supplies history.
-    """
+    """Compare persona/style conditions against each suite baseline."""
     transfer_results: Dict[str, dict] = {}
 
     for suite_name, result in suite_results.items():
