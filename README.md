@@ -121,6 +121,8 @@ Results are written under `results/` by default:
 
 Checkpoint files allow interrupted runs to resume without repeating completed API calls.
 
+Style-suite reports include Wilson score intervals for detector hit rates. Conditions with fewer than 30 outputs are marked `low-n`.
+
 ## Notes For Reliable Comparisons
 
 - Use `--dry-run` before larger multi-model runs.

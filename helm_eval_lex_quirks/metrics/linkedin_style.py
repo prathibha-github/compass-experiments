@@ -126,8 +126,13 @@ def analyze_outputs(condition_outputs: Dict[str, List[str]]) -> Dict[str, dict]:
         phrases = detectors["linkedin_phrases"]
         results[condition] = {
             "n_outputs": stats["n_outputs"],
+            "low_sample": stats["low_sample"],
             "pct_with_emoji": emoji["pct_hit"],
+            "pct_with_emoji_ci_low": emoji["pct_hit_ci_low"],
+            "pct_with_emoji_ci_high": emoji["pct_hit_ci_high"],
             "pct_excessive_emoji": excessive["pct_hit"],
+            "pct_excessive_emoji_ci_low": excessive["pct_hit_ci_low"],
+            "pct_excessive_emoji_ci_high": excessive["pct_hit_ci_high"],
             "mean_emoji_count": emoji["mean_count"],
             "mean_phrase_hits": phrases["mean_count"],
             "linkedin_score_mean": round(emoji["mean_count"] + phrases["mean_count"], 2),

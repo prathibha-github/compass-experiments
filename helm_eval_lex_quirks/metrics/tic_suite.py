@@ -164,6 +164,8 @@ class CharacterCountDetector(TicDetector):
 
 
 RecordExtras = Callable[[str, Dict[str, DetectorResult]], Dict[str, object]]
+LOW_SAMPLE_THRESHOLD = 30
+WILSON_Z_95 = 1.96
 
 
 @dataclass(frozen=True)
@@ -211,6 +213,22 @@ def analyze_text(text: str, suite: TicSuite) -> Dict[str, DetectorResult]:
     return {detector.name: detector.detect(text) for detector in suite.detectors}
 
 
+def wilson_interval(hit_count: int, n_outputs: int, z: float = WILSON_Z_95) -> Dict[str, float]:
+    """Return a Wilson score interval as percentages."""
+    if n_outputs <= 0:
+        return {"low": 0.0, "high": 0.0}
+
+    p_hat = hit_count / n_outputs
+    z2 = z * z
+    denom = 1 + z2 / n_outputs
+    center = (p_hat + z2 / (2 * n_outputs)) / denom
+    margin = z * ((p_hat * (1 - p_hat) + z2 / (4 * n_outputs)) / n_outputs) ** 0.5 / denom
+    return {
+        "low": round(100 * max(0.0, center - margin), 1),
+        "high": round(100 * min(1.0, center + margin), 1),
+    }
+
+
 def summarize_outputs(condition_outputs: Dict[str, List[str]], suite: TicSuite) -> Dict[str, dict]:
     """Aggregate detector prevalence and intensity by condition."""
     summary: Dict[str, dict] = {}
@@ -229,13 +247,19 @@ def summarize_outputs(condition_outputs: Dict[str, List[str]], suite: TicSuite) 
         detectors = {}
         for name, values in detector_values.items():
             n_outputs = len(outputs)
+            ci = wilson_interval(detector_hits[name], n_outputs)
             detectors[name] = {
+                "hit_count": detector_hits[name],
                 "mean_count": round(sum(values) / n_outputs, 2) if n_outputs else 0.0,
                 "pct_hit": round(100 * detector_hits[name] / n_outputs, 1) if n_outputs else 0.0,
+                "pct_hit_ci_low": ci["low"],
+                "pct_hit_ci_high": ci["high"],
+                "low_sample": 0 < n_outputs < LOW_SAMPLE_THRESHOLD,
             }
 
         summary[condition] = {
             "n_outputs": len(outputs),
+            "low_sample": 0 < len(outputs) < LOW_SAMPLE_THRESHOLD,
             "detectors": detectors,
         }
 
