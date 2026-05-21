@@ -31,6 +31,14 @@ class TicSuiteDetectorTests(unittest.TestCase):
         self.assertTrue(result.hit)
         self.assertEqual(result.metadata["phrases"], {"unlock": 1, "north star": 1})
 
+    def test_phrase_set_detector_uses_word_boundaries(self):
+        detector = PhraseSetDetector(name="tone", phrases={"may", "valid", "align"})
+
+        result = detector.detect("Maybe invalidate this realignment, but may align later.")
+
+        self.assertEqual(result.count, 2)
+        self.assertEqual(result.metadata["phrases"], {"may": 1, "align": 1})
+
     def test_regex_detector_records_matches(self):
         detector = RegexDetector(name="not_just_but", pattern=r"\bnot\s+just\b.*\bbut\b")
 
