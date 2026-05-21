@@ -1,7 +1,7 @@
 import json
 import os
 from datetime import datetime
-from typing import Dict
+from typing import Any, Dict, Tuple
 
 from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_NOTES
 from helm_eval_lex_quirks.runner import EvalResults
@@ -19,7 +19,7 @@ def _sample_flag(stats: dict) -> str:
     return " low-n" if stats.get("low_sample") else ""
 
 
-def _top_detector(stats: dict) -> tuple:
+def _top_detector(stats: dict) -> Tuple[str, Dict[str, Any]]:
     detectors = stats.get("detectors", {})
     if not detectors:
         return ("", {})

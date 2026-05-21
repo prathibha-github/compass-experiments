@@ -391,6 +391,8 @@ class EvalRunner:
         uplift_fn: Optional[TicUpliftFn] = None,
     ) -> dict:
         condition_outputs: Dict[str, List[str]] = {c.name: [] for c in suite.conditions}
+        # Group completions by task type, then by condition, so reports can show
+        # task-level slices without re-running any model calls.
         task_outputs: Dict[str, Dict[str, List[str]]] = {
             prompt.task_type: {c.name: [] for c in suite.conditions}
             for prompt in suite.prompts
@@ -503,6 +505,7 @@ class EvalRunner:
         if isinstance(prompt_idx, int) and 0 <= prompt_idx < len(suite.prompts):
             return suite.prompts[prompt_idx].task_type
 
+        # Legacy checkpoints may lack prompt metadata; fall back to the generic bucket.
         return "general"
 
     @staticmethod
