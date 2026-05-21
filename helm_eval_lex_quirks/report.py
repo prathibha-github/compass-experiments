@@ -3,6 +3,7 @@ import os
 from datetime import datetime
 from typing import Dict
 
+from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_NOTES
 from helm_eval_lex_quirks.runner import EvalResults
 
 
@@ -34,6 +35,8 @@ def _summary_dict(res: EvalResults) -> dict:
         out["quirk_detection"] = res.quirk_results[:15]
     if res.linkedin_results:
         out["linkedin_style"] = res.linkedin_results
+    if res.tic_results:
+        out["tic_suites"] = res.tic_results
     return out
 
 
@@ -171,6 +174,34 @@ def format_table(results_by_model: Dict[str, EvalResults]) -> str:
         checkpoint_path = res.linkedin_results.get("checkpoint_path")
         if checkpoint_path:
             lines.append(f"  Checkpoint: {checkpoint_path}")
+
+    # ── Generic tic/style suites ─────────────────────────────────────────────
+    for m, res in results_by_model.items():
+        for suite_name, suite_results in res.tic_results.items():
+            if suite_name == "linkedin_style":
+                continue
+            lines += [
+                "",
+                sep,
+                f"  TIC SUITE DETECTION — {suite_name} — {m}",
+                "  Detector prevalence and mean counts across system prompt conditions",
+                "-" * 96,
+            ]
+            note = STYLE_SUITE_NOTES.get(suite_name)
+            if note:
+                lines.append(f"  Note: {note}")
+            analysis = suite_results.get("analysis", {})
+            for condition, stats in analysis.items():
+                lines.append(f"  {condition:<20}  n={stats['n_outputs']:>3}")
+                for detector_name, detector_stats in stats.get("detectors", {}).items():
+                    lines.append(
+                        f"    {detector_name:<18}  "
+                        f"hit%={detector_stats['pct_hit']:>5.1f}  "
+                        f"mean={detector_stats['mean_count']:>4.2f}"
+                    )
+            checkpoint_path = suite_results.get("checkpoint_path")
+            if checkpoint_path:
+                lines.append(f"  Checkpoint: {checkpoint_path}")
 
     lines.append(sep)
     return "\n".join(lines)
