@@ -51,6 +51,7 @@ class BuiltinTicSuiteTests(unittest.TestCase):
                 self.assertTrue(suite.conditions)
                 self.assertTrue(suite.detectors)
                 self.assertTrue(suite.baseline_condition)
+                self.assertTrue(all(prompt.task_type for prompt in suite.prompts))
                 self.assertEqual(len({detector.name for detector in suite.detectors}), len(suite.detectors))
 
 

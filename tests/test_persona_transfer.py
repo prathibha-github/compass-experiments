@@ -67,11 +67,14 @@ class PersonaTransferTests(unittest.TestCase):
             result = EvalRunner(cfg)._run_model(DummyClient(), "dummy-model")
 
         self.assertIn("punctuation_tics", result.persona_transfer_results)
+        self.assertIn("technical_explanation", result.tic_results["punctuation_tics"]["task_segments"])
         self.assertIn(
             "enthusiastic",
             result.persona_transfer_results["punctuation_tics"]["persona_conditions"],
         )
-        self.assertIn("PERSONA TRANSFER", format_table({"dummy-model": result}))
+        report_text = format_table({"dummy-model": result})
+        self.assertIn("PERSONA TRANSFER", report_text)
+        self.assertIn("Task segments", report_text)
 
 
 if __name__ == "__main__":
