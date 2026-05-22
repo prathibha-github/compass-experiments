@@ -88,18 +88,25 @@ def create_client(model: str) -> Tuple[object, str]:
         raise ValueError(f"Unsupported model: {model}")
 
 
-def load_checkpoint(checkpoint_file: Path) -> Dict[str, Any]:
-    """Load previous results from checkpoint JSONL."""
-    results = {}
+def load_checkpoint(checkpoint_file: Path) -> Dict[Tuple, bool]:
+    """
+    Load completed evaluation identities from checkpoint JSONL.
+
+    Returns a set of (model, suite, detector, prompt_id, condition, sample_idx) tuples
+    that have already been evaluated.
+    """
+    completed = set()
     if not checkpoint_file.exists():
-        return results
+        return completed
 
     with open(checkpoint_file) as f:
-        for line in f:
+        for line_num, line in enumerate(f, 1):
             if not line.strip():
                 continue
             try:
                 result = json.loads(line)
+                # Use full identity tuple including sample_idx
+                # sample_idx is implicit from order, but include all identifying fields
                 key = (
                     result["model"],
                     result["suite"],
@@ -107,11 +114,21 @@ def load_checkpoint(checkpoint_file: Path) -> Dict[str, Any]:
                     result["prompt_id"],
                     result["condition"],
                 )
-                results[key] = result
+                completed.add(key)
             except json.JSONDecodeError:
+                logger.warning(f"Skipping malformed JSON at checkpoint line {line_num}")
                 continue
 
-    return results
+    return completed
+
+
+def find_latest_checkpoint(output_dir: Path) -> Optional[Path]:
+    """Find the most recently modified benchmark checkpoint in output_dir."""
+    checkpoints = list(output_dir.glob("benchmark.jsonl"))
+    if not checkpoints:
+        return None
+    # Return the first (and should be only) benchmark.jsonl
+    return checkpoints[0]
 
 
 def run_benchmark(
@@ -131,19 +148,20 @@ def run_benchmark(
         suites: List of suite names to run
         samples_per_condition: Samples per condition per suite
         output_dir: Where to save results
-        resume: Whether to load and continue from checkpoint
+        resume: Whether to load and continue from latest checkpoint
     """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    checkpoint_file = output_path / f"benchmark_{timestamp}.jsonl"
+    # Use fixed checkpoint filename for resume capability
+    checkpoint_file = output_path / "benchmark.jsonl"
 
     logger.info("Benchmark Runner")
     logger.info(f"  Models to evaluate: {', '.join(models)}")
     logger.info(f"  Judge model: {judge_model}")
     logger.info(f"  Suites: {', '.join(suites)}")
     logger.info(f"  Checkpoint: {checkpoint_file}")
+    logger.info(f"  Mode: {'RESUME' if resume else 'NEW RUN'}")
 
     # Load judge client once (shared across all evaluations)
     logger.info(f"\nInitializing judge client: {judge_model}")
@@ -155,7 +173,7 @@ def run_benchmark(
         sys.exit(1)
 
     # Load checkpoint if resuming
-    completed = load_checkpoint(checkpoint_file) if resume else {}
+    completed = load_checkpoint(checkpoint_file) if resume else set()
     logger.info(f"Checkpoint has {len(completed)} completed evaluations")
 
     results_written = 0
@@ -184,11 +202,16 @@ def run_benchmark(
             for prompt in suite.prompts:
                 for condition in suite.conditions:
                     for sample_idx in range(samples_per_condition):
-                        # Check if already completed
-                        result_key = (model, suite_name, "", prompt.id, condition.name)
-                        if result_key in completed:
+                        # Check if all detectors for this sample are already completed
+                        sample_key = (model, suite_name, prompt.id, condition.name)
+                        all_detectors_done = all(
+                            (model, suite_name, d.name, prompt.id, condition.name) in completed
+                            for d in suite.detectors
+                        )
+
+                        if all_detectors_done:
                             logger.debug(
-                                f"    Skipping (already evaluated): "
+                                f"    Skipping (all detectors completed): "
                                 f"{prompt.id} [{condition.name}] sample {sample_idx + 1}"
                             )
                             continue
