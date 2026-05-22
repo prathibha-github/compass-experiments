@@ -1,0 +1,17 @@
+"""Shared helpers for unit test configuration setup."""
+
+from helm_eval_lex_quirks.config import EvalConfig
+
+
+def make_eval_config(**overrides) -> EvalConfig:
+    base = dict(
+        api_key="dummy",
+        anthropic_api_key="anthropic-key",
+        output_dir="results",
+        scenarios=[],
+        models=["gpt-4o-mini"],
+        style_only=True,
+        style_suites=[],
+    )
+    base.update(overrides)
+    return EvalConfig(**base)

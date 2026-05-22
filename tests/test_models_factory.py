@@ -1,21 +1,17 @@
+"""Unit tests for create_client routing and key validation behavior."""
+
 import unittest
 from unittest.mock import patch
 
-from helm_eval_lex_quirks.config import EvalConfig
 from helm_eval_lex_quirks.models import create_client
+from tests._test_base import make_eval_config
 
 
 class ModelFactoryTests(unittest.TestCase):
     def _config(self, **overrides):
-        base = dict(
-            api_key="openai-key",
-            anthropic_api_key="anthropic-key",
-            output_dir="results",
-            scenarios=[],
-            style_only=True,
-        )
+        base = {"api_key": "openai-key", "output_dir": "results"}
         base.update(overrides)
-        return EvalConfig(**base)
+        return make_eval_config(**base)
 
     def test_create_client_requires_anthropic_key(self):
         cfg = self._config(anthropic_api_key=None)
