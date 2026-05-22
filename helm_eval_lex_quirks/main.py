@@ -40,7 +40,7 @@ python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite 
 python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-... --style-only --style-suite llm_judge_tone --judge-model gpt-4o-mini --models claude-haiku-4-5-20251001
 
 # Run self-harm safety handling audit (LLM judge required)
-python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-... --style-only --style-suite self_harm_safety --judge-model gpt-4o-mini --models gpt-4.1-nano claude-haiku-4-5-20251001
+python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-... --style-only --style-suite self_harm_safety --judge-model gpt-4o-mini --models gpt-4o-mini claude-haiku-4-5-20251001
 
 # Run dual-judge disagreement audit for subjective suites
 python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-... \

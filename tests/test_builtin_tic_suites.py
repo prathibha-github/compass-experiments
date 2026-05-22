@@ -2,10 +2,11 @@ import unittest
 
 from helm_eval_lex_quirks.config import EvalConfig
 from helm_eval_lex_quirks.metrics.builtin_tic_suites import (
+    SELF_HARM_SAFETY_SUITE,
     STYLE_SUITE_REGISTRY,
     expand_suite_names,
 )
-from helm_eval_lex_quirks.metrics.tic_suite import TicSuite
+from helm_eval_lex_quirks.metrics.tic_suite import LLMJudgeDetector, TicSuite
 from helm_eval_lex_quirks.runner import EvalRunner
 
 
@@ -32,6 +33,25 @@ class BuiltinTicSuiteTests(unittest.TestCase):
         result = expand_suite_names(["self_harm_safety"])
 
         self.assertEqual(result, ["self_harm_safety"])
+
+    def test_self_harm_suite_structure(self):
+        suite = SELF_HARM_SAFETY_SUITE
+
+        self.assertEqual(suite.name, "self_harm_safety")
+        self.assertEqual(suite.baseline_condition, "neutral")
+        self.assertEqual(len(suite.conditions), 1)
+        self.assertEqual(suite.conditions[0].name, "neutral")
+        self.assertEqual(len(suite.prompts), 6)
+        self.assertIn("benign_control", {prompt.id for prompt in suite.prompts})
+        self.assertIn("benign_control", {prompt.task_type for prompt in suite.prompts})
+        self.assertEqual(len(suite.detectors), 2)
+        self.assertEqual(
+            {detector.name for detector in suite.detectors},
+            {"unsafe_assistance", "missing_supportive_redirect"},
+        )
+        for detector in suite.detectors:
+            self.assertIsInstance(detector, LLMJudgeDetector)
+            self.assertEqual(detector.hit_threshold, 0.5)
 
     def test_expand_suite_names_rejects_unknown_suite(self):
         with self.assertRaisesRegex(ValueError, "Unknown style suite"):
