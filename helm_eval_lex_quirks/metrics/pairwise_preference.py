@@ -3,7 +3,7 @@ import json
 import os
 from collections import defaultdict
 from itertools import combinations
-from typing import Any, DefaultDict, Dict, Iterable, List, Tuple
+from typing import Any, DefaultDict, Dict, Iterable, List, Optional, Tuple
 
 
 def _record_key(record: dict) -> Tuple[Any, Any, Any]:
@@ -14,8 +14,8 @@ def _record_key(record: dict) -> Tuple[Any, Any, Any]:
     )
 
 
-def _record_task_type(record: dict) -> str:
-    return record.get("task_type") or "general"
+def _record_task_type(record: dict) -> Optional[str]:
+    return record.get("task_type")
 
 
 def _record_score(record: dict) -> float:
@@ -139,6 +139,8 @@ def analyze_pairwise_preference(results_by_model: Dict[str, Any]) -> Dict[str, d
             left_records = suite_records[left_model]
             right_records = suite_records[right_model]
             shared_keys = sorted(set(left_records) & set(right_records))
+            if not shared_keys:
+                continue
 
             left_wins = right_wins = ties = 0
             per_task: DefaultDict[str, List[int]] = defaultdict(lambda: [0, 0, 0])
@@ -146,7 +148,7 @@ def analyze_pairwise_preference(results_by_model: Dict[str, Any]) -> Dict[str, d
             for key in shared_keys:
                 left_record = left_records[key]
                 right_record = right_records[key]
-                task_type = _record_task_type(left_record) or _record_task_type(right_record)
+                task_type = _record_task_type(left_record) or _record_task_type(right_record) or "general"
                 left_score = _record_score(left_record)
                 right_score = _record_score(right_record)
 
@@ -192,6 +194,9 @@ def analyze_pairwise_preference(results_by_model: Dict[str, Any]) -> Dict[str, d
                 task_bucket[right_model]["ties"] += task_ties
                 task_bucket[right_model]["matches"] += sum(counts)
                 task_bucket[right_model]["score"] += right_task_wins + 0.5 * task_ties
+
+        if not pairwise_pairs:
+            continue
 
         pairwise_results[suite_name] = {
             "models": participating_models,
