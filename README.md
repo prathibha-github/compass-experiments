@@ -133,7 +133,25 @@ python -m helm_eval_lex_quirks.main \
   --models claude-haiku-4-5-20251001 claude-sonnet-4-6
 ```
 
+Optional: run dual-judge disagreement audit on the same suite:
+
+```bash
+python -m helm_eval_lex_quirks.main \
+  --style-only \
+  --style-suite llm_judge_tone \
+  --style-samples 3 \
+  --judge-model gpt-4o-mini \
+  --judge-model-secondary claude-haiku-4-5-20251001 \
+  --judge-disagreement-threshold 0.4 \
+  --models claude-sonnet-4-6
+```
+
 LLM-judge suites are opt-in. They add judge-model cost and should be audited for judge bias.
+LLM-judge parsing clamps detector score into `[0, 1]` and truncates stored `rationale`/raw judge text to 500 chars.
+When secondary judge auditing is enabled, each LLM-judge detector checkpoint record adds:
+- `secondary_score`, `secondary_hit`, `secondary_confidence`, `secondary_rationale`
+- `score_delta` (absolute primary-secondary score gap)
+- `agreement` (primary and secondary hit match)
 ## Persona Transfer
 
 Persona transfer compares each style/persona condition against a suite baseline. It measures whether a persona system prompt increases tic prevalence on neutral task prompts. It does not measure persistent cross-session model memory; public API calls are stateless unless the caller supplies prior messages.

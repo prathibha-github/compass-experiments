@@ -110,6 +110,42 @@ def _append_tic_suite_sections(lines: List[str], results_by_model: Dict[str, Eva
                     f"${judge.get('cost_usd', 0.0):.4f}  "
                     f"({tok.get('input', 0):,} in + {tok.get('output', 0):,} out tokens)"
                 )
+            judge_secondary = suite_results.get("judge_secondary")
+            if judge_secondary:
+                tok = judge_secondary.get("token_usage", {})
+                lines.append(
+                    f"  Judge secondary: {judge_secondary.get('model')}  "
+                    f"${judge_secondary.get('cost_usd', 0.0):.4f}  "
+                    f"({tok.get('input', 0):,} in + {tok.get('output', 0):,} out tokens)"
+                )
+            judge_agreement = suite_results.get("judge_agreement")
+            if judge_agreement:
+                overall = judge_agreement.get("overall", {})
+                threshold = judge_agreement.get("threshold", 0.0)
+                lines.append(
+                    "  Judge agreement: "
+                    f"n={overall.get('n', 0)}  "
+                    f"agree={overall.get('agreement_pct', 0.0):.1f}%  "
+                    f"mean|Δ|={overall.get('mean_abs_score_delta', 0.0):.3f}  "
+                    f"high(Δ>={threshold:.2f})={overall.get('high_disagreement_pct', 0.0):.1f}%"
+                )
+                lines.append("  Judge disagreement by condition:")
+                for condition, stats in judge_agreement.get("conditions", {}).items():
+                    lines.append(
+                        f"    {condition:<18}  n={stats.get('n', 0):>3}  "
+                        f"agree={stats.get('agreement_pct', 0.0):>5.1f}%  "
+                        f"mean|Δ|={stats.get('mean_abs_score_delta', 0.0):>5.3f}"
+                    )
+                top_disagreements = judge_agreement.get("top_disagreements", [])
+                if top_disagreements:
+                    lines.append("  Top judge disagreements:")
+                    for row in top_disagreements[:5]:
+                        lines.append(
+                            f"    {row.get('detector', ''):<18}  "
+                            f"{row.get('condition', ''):<14}  "
+                            f"{row.get('task_type', ''):<16}  "
+                            f"Δ={row.get('score_delta', 0.0):>5.3f}"
+                        )
 
             task_segments = suite_results.get("task_segments", {})
             if task_segments:

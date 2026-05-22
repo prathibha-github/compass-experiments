@@ -38,6 +38,12 @@ python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite 
 
 # Run subjective tone judges
 python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-... --style-only --style-suite llm_judge_tone --judge-model gpt-4o-mini --models claude-haiku-4-5-20251001
+
+# Run dual-judge disagreement audit for subjective suites
+python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-... \
+  --style-only --style-suite llm_judge_tone --judge-model gpt-4o-mini \
+  --judge-model-secondary claude-haiku-4-5-20251001 \
+  --judge-disagreement-threshold 0.4 --models claude-sonnet-4-6
 """
 import argparse
 import json
@@ -184,6 +190,16 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     )
     parser.add_argument("--judge-model",
                         help="Model used for suites with LLM judge detectors")
+    parser.add_argument(
+        "--judge-model-secondary",
+        help="Optional second judge model for agreement/disagreement auditing",
+    )
+    parser.add_argument(
+        "--judge-disagreement-threshold",
+        type=float,
+        default=0.4,
+        help="Absolute score-delta threshold for flagging high judge disagreement",
+    )
     parser.add_argument("--seed",             type=int,   default=42)
     parser.add_argument("--request-interval", type=float, default=2.0,
                         help="Seconds between API calls. Raise to 4-6 for free-tier accounts.")
@@ -217,8 +233,19 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     if uses_llm_judge and not args.judge_model:
         print("ERROR: selected style suites with LLM judges require --judge-model.", file=sys.stderr)
         sys.exit(1)
+    if args.judge_model_secondary and args.judge_model_secondary == args.judge_model:
+        print("ERROR: --judge-model-secondary must differ from --judge-model.", file=sys.stderr)
+        sys.exit(1)
+    if args.judge_model_secondary and not uses_llm_judge:
+        logging.warning(
+            "--judge-model-secondary was provided but no LLM-judge style suite is enabled; "
+            "secondary judge will not be used."
+        )
     if args.pairwise_time_decay_halflife_days is not None and args.pairwise_time_decay_halflife_days <= 0:
         print("ERROR: --pairwise-time-decay-halflife-days must be > 0.", file=sys.stderr)
+        sys.exit(1)
+    if not (0.0 <= args.judge_disagreement_threshold <= 1.0):
+        print("ERROR: --judge-disagreement-threshold must be in [0, 1].", file=sys.stderr)
         sys.exit(1)
     if args.pairwise_from_results:
         try:
@@ -230,6 +257,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     model_names = list(args.models)
     if args.judge_model:
         model_names.append(args.judge_model)
+    if args.judge_model_secondary:
+        model_names.append(args.judge_model_secondary)
     providers = {model_provider(model) for model in model_names}
     if "openai" in providers and not args.api_key:
         print("ERROR: OpenAI models require --api-key or OPENAI_API_KEY.", file=sys.stderr)
@@ -261,6 +290,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         pairwise_time_decay_halflife_days=args.pairwise_time_decay_halflife_days,
         run_tag=args.run_tag,
         judge_model=args.judge_model,
+        judge_model_secondary=args.judge_model_secondary,
+        judge_disagreement_threshold=args.judge_disagreement_threshold,
         seed=args.seed,
         dry_run=args.dry_run,
         request_interval=args.request_interval,
@@ -296,6 +327,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             extras.append(f"run-tag={cfg.run_tag}")
         if cfg.judge_model:
             extras.append(f"judge-model={cfg.judge_model}")
+        if cfg.judge_model_secondary:
+            extras.append(f"judge-model-secondary={cfg.judge_model_secondary}")
         extra_str = f"  [{', '.join(extras)}]" if extras else ""
         print(f"  {model:<20}  ~${cost:.4f}{extra_str}")
 
