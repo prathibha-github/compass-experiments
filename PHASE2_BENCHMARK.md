@@ -90,6 +90,9 @@ Append-only log of all evaluations:
 }
 ```
 
+If you start a non-resume run while `benchmark.jsonl` already exists, the file
+is truncated and the discarded row count is logged.
+
 **Key fields:**
 - `score`: Detector-specific score (0.0-1.0 for LLM judges)
 - `hit`: Boolean whether the detection threshold was met
@@ -140,6 +143,10 @@ Run 2: Resume with --resume flag
 2. Per-sample: check if ALL detectors for that sample are done
 3. If yes: skip entire sample (all detectors)
 4. If no: evaluate (allows retrying failed detectors)
+
+Legacy checkpoints written before `sample_idx` existed are still readable.
+Those records default to `sample_idx=0`, which is the best available fallback
+but can collapse older sample-level runs together.
 
 ## Architecture
 
