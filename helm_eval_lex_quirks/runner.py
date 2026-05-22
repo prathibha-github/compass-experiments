@@ -10,6 +10,7 @@ from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, mo
 from helm_eval_lex_quirks.metrics.accuracy import extract_mc_answer, multiple_choice_accuracy
 from helm_eval_lex_quirks.metrics.calibration import compute_ece, extract_choice_probs
 from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY
+from helm_eval_lex_quirks.metrics.pairwise_preference import analyze_pairwise_preference
 from helm_eval_lex_quirks.metrics.persona_transfer import analyze_persona_transfer
 from helm_eval_lex_quirks.metrics.quirk_detection import QUIRK_PROMPTS, SYSTEM_PROMPTS, find_quirks
 from helm_eval_lex_quirks.metrics.linkedin_style import (
@@ -77,6 +78,7 @@ class EvalResults:
     linkedin_results: Optional[dict]              = None
     tic_results:      Dict[str, dict]             = field(default_factory=dict)
     persona_transfer_results: Dict[str, dict]     = field(default_factory=dict)
+    pairwise_preference_results: Dict[str, dict]  = field(default_factory=dict)
     token_usage:      dict                        = field(default_factory=dict)
     total_cost_usd:   float                       = 0.0
 
@@ -116,6 +118,10 @@ class EvalRunner:
             logger.info("Evaluating: %s", model_name)
             client = create_client(self.config, model_name)
             out[model_name] = self._run_model(client, model_name)
+        if self.config.run_pairwise_preference:
+            pairwise = analyze_pairwise_preference(out)
+            for result in out.values():
+                result.pairwise_preference_results = pairwise
         return out
 
     # ── checkpointing ────────────────────────────────────────────────────────
