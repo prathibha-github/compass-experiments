@@ -28,3 +28,5 @@ Thumbs.db
 .env
 *.env
 BLOG_POST.md
+.coverage
+LLM_JUDGE_TONE_ANALYSIS.md
