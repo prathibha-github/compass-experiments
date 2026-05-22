@@ -1,24 +1,44 @@
 #!/usr/bin/env python3
-"""
-Example: Custom Constitutional Compliance Evaluation using Compass
-
-Demonstrates how to use the compass library to evaluate model outputs
-against constitutional principles using the phase2 benchmark infrastructure.
-"""
-
-from compass import (
-    JudgeConfig,
-    LLMJudge,
-    EvaluationCache,
-    RubricLibrary,
-    MultiModelComparator,
-)
-from compass.reproducibility import reproducibility_report
+"""Example: custom constitutional evaluation helpers."""
 from pathlib import Path
+import sys
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+
+def _load_compass():
+    """
+    Import Compass modules lazily so this example script still runs in repos
+    where Compass is not installed.
+    """
+    try:
+        from compass import (
+            JudgeConfig,
+            LLMJudge,
+            EvaluationCache,
+            RubricLibrary,
+        )
+        from compass.reproducibility import reproducibility_report
+        return (
+            JudgeConfig,
+            LLMJudge,
+            EvaluationCache,
+            RubricLibrary,
+            reproducibility_report,
+        )
+    except ImportError as exc:
+        raise ImportError(
+            "Compass is not installed. Install the Compass package to run "
+            "examples 1, 2, and 4."
+        ) from exc
 
 
 def evaluate_single_response():
     """Evaluate a single model response against a rubric."""
+    JudgeConfig, LLMJudge, EvaluationCache, RubricLibrary, _ = _load_compass()
     print("=" * 70)
     print("Example 1: Single Response Evaluation")
     print("=" * 70)
@@ -52,6 +72,7 @@ def evaluate_single_response():
 
 def evaluate_multiple_completions():
     """Evaluate multiple completions and compare them."""
+    JudgeConfig, LLMJudge, EvaluationCache, RubricLibrary, _ = _load_compass()
     print("\n" + "=" * 70)
     print("Example 2: Multiple Completions with Comparison")
     print("=" * 70)
@@ -140,6 +161,13 @@ def compare_models_on_suite():
 
 def reproducibility_example():
     """Demonstrate reproducibility and caching."""
+    (
+        JudgeConfig,
+        LLMJudge,
+        EvaluationCache,
+        RubricLibrary,
+        reproducibility_report,
+    ) = _load_compass()
     print("\n" + "=" * 70)
     print("Example 4: Reproducibility and Caching")
     print("=" * 70)
@@ -234,21 +262,16 @@ if __name__ == "__main__":
 ╚════════════════════════════════════════════════════════════════════════╝
 """)
 
-    try:
-        # Note: These examples require API keys or local model setup
-        # Uncomment to run (requires OPENAI_API_KEY or Ollama)
-        # evaluate_single_response()
-        # evaluate_multiple_completions()
-        compare_models_on_suite()
-        run_phase2_example()
+    # These run without Compass.
+    compare_models_on_suite()
+    run_phase2_example()
 
-        print("\n" + "=" * 70)
-        print("For more examples, see:")
-        print("  - PHASE2_BENCHMARK.md: Full benchmark documentation")
-        print("  - tests/test_*.py: Unit tests showing API usage")
-        print("  - compass/__init__.py: Public API reference")
-        print("=" * 70)
-
-    except ImportError as e:
-        print(f"\nNote: Some examples require API keys or local models: {e}")
-        print("See comments in the script for how to set up.")
+    print("\n" + "=" * 70)
+    print("For more examples, see:")
+    print("  - PHASE2_BENCHMARK.md: Full benchmark documentation")
+    print("  - tests/test_*.py: Unit tests showing API usage")
+    print(
+        "  - examples/custom_constitutional_eval.py: "
+        "Compass-backed examples 1, 2, and 4 require Compass installed"
+    )
+    print("=" * 70)

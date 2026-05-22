@@ -11,6 +11,10 @@ The Constitutional Compliance Benchmark measures how well LLMs adhere to Constit
 
 ### Prerequisites
 
+This repository supports the benchmark runner directly. The optional Compass
+library is only needed for advanced examples in
+`examples/custom_constitutional_eval.py`.
+
 **Option 1: Local Models (Ollama)**
 ```bash
 # Install Ollama: https://ollama.ai
@@ -280,9 +284,18 @@ for suite_name in ['task_focus', 'truthfulness']:
 "
 ```
 
+Optional advanced example:
+```bash
+# Runs suite inspection + runnable benchmark commands
+python examples/custom_constitutional_eval.py
+```
+
+If you also install Compass, you can uncomment additional examples in
+`custom_constitutional_eval.py` for rubric-level judge workflows.
+
 ## Next Steps
 
 - [ ] Run benchmark on target models (gpt-4o, claude-opus, llama3.1, etc.)
 - [ ] Compare results across models and conditions
 - [ ] Publish findings + methodology
-- [ ] Extract compass into eval-judges library
+- [ ] Evaluate whether to add Compass as an optional dependency
