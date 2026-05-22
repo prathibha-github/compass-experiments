@@ -19,7 +19,7 @@ import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from helm_eval_lex_quirks.metrics.builtin_tic_suites import (
     STYLE_SUITE_REGISTRY,
@@ -48,6 +48,7 @@ class BenchmarkResult:
     detector: str
     prompt_id: str
     condition: str
+    sample_idx: int
     score: float
     hit: bool
     confidence: Optional[float] = None
@@ -88,36 +89,58 @@ def create_client(model: str) -> Tuple[object, str]:
         raise ValueError(f"Unsupported model: {model}")
 
 
-def load_checkpoint(checkpoint_file: Path) -> Dict[Tuple, bool]:
+def load_checkpoint(checkpoint_file: Path) -> Set[Tuple[str, str, str, str, str, int]]:
     """
     Load completed evaluation identities from checkpoint JSONL.
 
     Returns a set of (model, suite, detector, prompt_id, condition, sample_idx) tuples
     that have already been evaluated.
+
+    Checkpoints written before sample_idx existed are treated as sample_idx=0 for
+    backward compatibility.
     """
     completed = set()
     if not checkpoint_file.exists():
         return completed
 
+    legacy_records = 0
     with open(checkpoint_file) as f:
         for line_num, line in enumerate(f, 1):
             if not line.strip():
                 continue
             try:
                 result = json.loads(line)
-                # Use full identity tuple including sample_idx
-                # sample_idx is implicit from order, but include all identifying fields
+                sample_idx = result.get("sample_idx", 0)
+                missing_sample_idx = "sample_idx" not in result
+                if not isinstance(sample_idx, int):
+                    # Legacy/manual checkpoints may serialize this as a string.
+                    sample_idx = int(sample_idx)
+                if missing_sample_idx:
+                    legacy_records += 1
                 key = (
                     result["model"],
                     result["suite"],
                     result["detector"],
                     result["prompt_id"],
                     result["condition"],
+                    sample_idx,
                 )
                 completed.add(key)
             except json.JSONDecodeError:
                 logger.warning(f"Skipping malformed JSON at checkpoint line {line_num}")
                 continue
+            except (KeyError, TypeError, ValueError):
+                logger.warning(
+                    f"Skipping invalid checkpoint record at line {line_num}"
+                )
+                continue
+
+    if legacy_records:
+        logger.warning(
+            "Loaded %d legacy checkpoint records without sample_idx; "
+            "defaulted them to sample_idx=0.",
+            legacy_records,
+        )
 
     return completed
 
@@ -152,6 +175,7 @@ def run_benchmark(
     """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Use fixed checkpoint filename for resume capability
     checkpoint_file = output_path / "benchmark.jsonl"
@@ -171,6 +195,16 @@ def run_benchmark(
     except Exception as e:
         logger.error(f"Failed to create judge client: {e}")
         sys.exit(1)
+
+    # Start fresh when not resuming so prior runs do not contaminate results.
+    if not resume and checkpoint_file.exists():
+        with open(checkpoint_file) as f:
+            discarded = sum(1 for line in f if line.strip())
+        logger.warning(
+            "  Resetting existing checkpoint for new run; discarding %d prior evaluations",
+            discarded,
+        )
+        checkpoint_file.write_text("")
 
     # Load checkpoint if resuming
     completed = load_checkpoint(checkpoint_file) if resume else set()
@@ -203,9 +237,16 @@ def run_benchmark(
                 for condition in suite.conditions:
                     for sample_idx in range(samples_per_condition):
                         # Check if all detectors for this sample are already completed
-                        sample_key = (model, suite_name, prompt.id, condition.name)
                         all_detectors_done = all(
-                            (model, suite_name, d.name, prompt.id, condition.name) in completed
+                            (
+                                model,
+                                suite_name,
+                                d.name,
+                                prompt.id,
+                                condition.name,
+                                sample_idx,
+                            )
+                            in completed
                             for d in suite.detectors
                         )
 
@@ -260,6 +301,7 @@ def run_benchmark(
                                         detector=detector.name,
                                         prompt_id=prompt.id,
                                         condition=condition.name,
+                                        sample_idx=sample_idx,
                                         score=detector_result.score,
                                         hit=detector_result.hit,
                                         confidence=confidence,
@@ -272,6 +314,16 @@ def run_benchmark(
                                     with open(checkpoint_file, "a") as f:
                                         f.write(json.dumps(bench_result.to_dict()) + "\n")
                                     results_written += 1
+                                    completed.add(
+                                        (
+                                            model,
+                                            suite_name,
+                                            detector.name,
+                                            prompt.id,
+                                            condition.name,
+                                            sample_idx,
+                                        )
+                                    )
 
                                 except Exception as e:
                                     logger.error(
