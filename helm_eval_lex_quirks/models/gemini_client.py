@@ -84,7 +84,7 @@ class GeminiClient:
 
         if system != "You are a helpful assistant.":
             logger.warning(
-                "Gemini client has a fixed system instruction set at construction time. "
+                "Gemini client uses a fixed default system instruction. "
                 "Per-call system prompts are not supported and will be ignored."
             )
 
@@ -97,27 +97,47 @@ class GeminiClient:
             self._last_call_at = time.monotonic()
 
             try:
-                # Build full prompt with system instruction
-                full_prompt = f"{system}\n\n{prompt}"
-
                 response = self.client.models.generate_content(
                     model=self.model,
-                    contents=full_prompt,
-                    config={
-                        "max_output_tokens": max_tokens,
-                        "temperature": temperature,
-                    },
+                    contents=prompt,
+                    config=self._genai.types.GenerateContentConfig(
+                        max_output_tokens=max_tokens,
+                        temperature=temperature,
+                        system_instruction=system,
+                        safety_settings=[
+                            self._genai.types.SafetySetting(
+                                category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                                threshold="BLOCK_NONE",
+                            ),
+                            self._genai.types.SafetySetting(
+                                category="HARM_CATEGORY_HATE_SPEECH",
+                                threshold="BLOCK_NONE",
+                            ),
+                            self._genai.types.SafetySetting(
+                                category="HARM_CATEGORY_HARASSMENT",
+                                threshold="BLOCK_NONE",
+                            ),
+                            self._genai.types.SafetySetting(
+                                category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                                threshold="BLOCK_NONE",
+                            ),
+                        ],
+                    ),
                 )
 
-                completion = response.text if response.text else ""
-
-                # Estimate tokens (google-genai may not always provide exact counts)
-                input_tokens = len(full_prompt.split())
-                output_tokens = len(completion.split())
-
+                usage = getattr(response, "usage_metadata", None)
+                input_tokens = getattr(usage, "prompt_token_count", 0) if usage else 0
+                output_tokens = getattr(usage, "candidates_token_count", 0) if usage else 0
                 self._input_tokens += input_tokens
                 self._output_tokens += output_tokens
                 self._request_count += 1
+
+                # Check if response has valid candidates before accessing text property,
+                # which raises ValueError when all candidates are filtered out.
+                if response.candidates and len(response.candidates) > 0:
+                    completion = response.text
+                else:
+                    completion = ""
 
                 return ModelResponse(
                     completion=completion.strip(),
