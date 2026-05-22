@@ -133,6 +133,19 @@ python -m helm_eval_lex_quirks.main \
   --models claude-haiku-4-5-20251001 claude-sonnet-4-6
 ```
 
+Optional: run dual-judge disagreement audit on the same suite:
+
+```bash
+python -m helm_eval_lex_quirks.main \
+  --style-only \
+  --style-suite llm_judge_tone \
+  --style-samples 3 \
+  --judge-model gpt-4o-mini \
+  --judge-model-secondary claude-haiku-4-5-20251001 \
+  --judge-disagreement-threshold 0.4 \
+  --models claude-sonnet-4-6
+```
+
 LLM-judge suites are opt-in. They add judge-model cost and should be audited for judge bias.
 ## Persona Transfer
 
