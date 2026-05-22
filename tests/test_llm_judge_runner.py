@@ -1,3 +1,5 @@
+import json
+import os
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -98,6 +100,303 @@ class LLMJudgeRunnerTests(unittest.TestCase):
                     suite=self._suite(),
                     samples=1,
                 )
+
+    def test_run_tic_suite_with_secondary_judge_reports_agreement(self):
+        class SubjectClient:
+            total_tokens = {"input": 0, "output": 0}
+            total_cost_usd = 0.0
+
+            def complete(self, prompt, max_tokens=1, logprobs=False, system=None):
+                return ModelResponse(completion="You are absolutely right.", logprobs=None)
+
+        class PrimaryJudgeClient:
+            @property
+            def total_tokens(self):
+                return {"input": 10, "output": 4}
+
+            @property
+            def total_cost_usd(self):
+                return 0.001
+
+            def complete(self, prompt, max_tokens=1, logprobs=False, system=None):
+                return ModelResponse(
+                    completion='{"score": 1.0, "hit": true, "confidence": 0.9, "rationale": "agree"}',
+                    logprobs=None,
+                )
+
+        class SecondaryJudgeClient:
+            @property
+            def total_tokens(self):
+                return {"input": 9, "output": 3}
+
+            @property
+            def total_cost_usd(self):
+                return 0.0009
+
+            def complete(self, prompt, max_tokens=1, logprobs=False, system=None):
+                return ModelResponse(
+                    completion='{"score": 0.1, "hit": false, "confidence": 0.8, "rationale": "disagree"}',
+                    logprobs=None,
+                )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg = EvalConfig(
+                api_key="dummy",
+                output_dir=tmpdir,
+                scenarios=[],
+                style_only=True,
+                style_suites=[],
+                judge_model="judge-primary",
+                judge_model_secondary="judge-secondary",
+                judge_disagreement_threshold=0.4,
+            )
+            with patch(
+                "helm_eval_lex_quirks.runner.create_client",
+                side_effect=[PrimaryJudgeClient(), SecondaryJudgeClient()],
+            ):
+                result = EvalRunner(cfg)._run_tic_suite(
+                    client=SubjectClient(),
+                    model_name="subject-model",
+                    suite=self._suite(),
+                    samples=1,
+                )
+
+        detector = result["analysis"]["neutral"]["detectors"]["sycophancy"]
+        self.assertEqual(detector["hit_count"], 1)
+        self.assertEqual(result["judge_secondary"]["model"], "judge-secondary")
+        agreement = result["judge_agreement"]["overall"]
+        self.assertEqual(agreement["n"], 1)
+        self.assertEqual(agreement["agreement_pct"], 0.0)
+        self.assertEqual(agreement["high_disagreement_pct"], 100.0)
+
+    def test_run_tic_suite_with_secondary_judge_when_judges_agree(self):
+        class SubjectClient:
+            total_tokens = {"input": 0, "output": 0}
+            total_cost_usd = 0.0
+
+            def complete(self, prompt, max_tokens=1, logprobs=False, system=None):
+                return ModelResponse(completion="Yes, great point.", logprobs=None)
+
+        class JudgeClient:
+            def __init__(self, payload: str):
+                self.payload = payload
+
+            @property
+            def total_tokens(self):
+                return {"input": 5, "output": 2}
+
+            @property
+            def total_cost_usd(self):
+                return 0.0005
+
+            def complete(self, prompt, max_tokens=1, logprobs=False, system=None):
+                return ModelResponse(completion=self.payload, logprobs=None)
+
+        primary = JudgeClient('{"score": 1.0, "hit": true, "confidence": 0.9, "rationale": "yes"}')
+        secondary = JudgeClient('{"score": 1.0, "hit": true, "confidence": 0.7, "rationale": "also yes"}')
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg = EvalConfig(
+                api_key="dummy",
+                output_dir=tmpdir,
+                scenarios=[],
+                style_only=True,
+                style_suites=[],
+                judge_model="judge-primary",
+                judge_model_secondary="judge-secondary",
+                judge_disagreement_threshold=0.4,
+            )
+            with patch(
+                "helm_eval_lex_quirks.runner.create_client",
+                side_effect=[primary, secondary],
+            ):
+                result = EvalRunner(cfg)._run_tic_suite(
+                    client=SubjectClient(),
+                    model_name="subject-model",
+                    suite=self._suite(),
+                    samples=1,
+                )
+
+        agreement = result["judge_agreement"]["overall"]
+        self.assertEqual(agreement["n"], 1)
+        self.assertEqual(agreement["agreement_pct"], 100.0)
+        self.assertEqual(agreement["high_disagreement_pct"], 0.0)
+
+    def test_run_tic_suite_resume_uses_existing_secondary_metadata(self):
+        class NeverCalledClient:
+            total_tokens = {"input": 0, "output": 0}
+            total_cost_usd = 0.0
+
+            def complete(self, *args, **kwargs):
+                raise AssertionError("complete() should not be called for fully resumed checkpoints")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ckpt_dir = os.path.join(tmpdir, "checkpoints")
+            os.makedirs(ckpt_dir, exist_ok=True)
+            ckpt_path = os.path.join(ckpt_dir, "subject-model__judge_suite.jsonl")
+            record = {
+                "schema_version": 1,
+                "model": "subject-model",
+                "suite": "judge_suite",
+                "condition": "neutral",
+                "prompt_id": "p0",
+                "task_type": "general",
+                "prompt_idx": 0,
+                "sample_idx": 0,
+                "prompt": "Respond to the user.",
+                "completion": "cached completion",
+                "detectors": {
+                    "sycophancy": {
+                        "name": "sycophancy",
+                        "count": 1,
+                        "score": 1.0,
+                        "hit": True,
+                        "metadata": {
+                            "secondary_score": 1.0,
+                            "secondary_hit": True,
+                            "secondary_confidence": 0.9,
+                            "secondary_rationale": "agree",
+                            "score_delta": 0.0,
+                            "agreement": True,
+                        },
+                    }
+                },
+            }
+            with open(ckpt_path, "w") as f:
+                f.write(json.dumps(record) + "\n")
+
+            cfg = EvalConfig(
+                api_key="dummy",
+                output_dir=tmpdir,
+                scenarios=[],
+                style_only=True,
+                style_suites=[],
+                judge_model="judge-primary",
+                judge_model_secondary="judge-secondary",
+                judge_disagreement_threshold=0.4,
+            )
+            with patch(
+                "helm_eval_lex_quirks.runner.create_client",
+                side_effect=[NeverCalledClient(), NeverCalledClient()],
+            ):
+                result = EvalRunner(cfg)._run_tic_suite(
+                    client=NeverCalledClient(),
+                    model_name="subject-model",
+                    suite=self._suite(),
+                    samples=1,
+                )
+
+        agreement = result["judge_agreement"]["overall"]
+        self.assertEqual(agreement["n"], 1)
+        self.assertEqual(agreement["agreement_pct"], 100.0)
+        self.assertEqual(agreement["high_disagreement_pct"], 0.0)
+
+    def test_resumption_includes_secondary_metadata_for_new_and_old_records(self):
+        class SubjectClient:
+            total_tokens = {"input": 0, "output": 0}
+            total_cost_usd = 0.0
+
+            def complete(self, prompt, max_tokens=1, logprobs=False, system=None):
+                return ModelResponse(completion="new completion", logprobs=None)
+
+        class JudgeClient:
+            @property
+            def total_tokens(self):
+                return {"input": 5, "output": 2}
+
+            @property
+            def total_cost_usd(self):
+                return 0.0005
+
+            def complete(self, prompt, max_tokens=1, logprobs=False, system=None):
+                return ModelResponse(
+                    completion='{"score": 1.0, "hit": true, "confidence": 0.9, "rationale": "agree"}',
+                    logprobs=None,
+                )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ckpt_dir = os.path.join(tmpdir, "checkpoints")
+            os.makedirs(ckpt_dir, exist_ok=True)
+            ckpt_path = os.path.join(ckpt_dir, "subject-model__judge_suite.jsonl")
+            old_record = {
+                "schema_version": 1,
+                "model": "subject-model",
+                "suite": "judge_suite",
+                "condition": "neutral",
+                "prompt_id": "p0",
+                "task_type": "general",
+                "prompt_idx": 0,
+                "sample_idx": 0,
+                "prompt": "Respond to the user.",
+                "completion": "old completion",
+                "detectors": {
+                    "sycophancy": {
+                        "name": "sycophancy",
+                        "count": 1,
+                        "score": 1.0,
+                        "hit": True,
+                        "metadata": {
+                            "secondary_score": 1.0,
+                            "secondary_hit": True,
+                            "secondary_confidence": 0.9,
+                            "secondary_rationale": "old",
+                            "score_delta": 0.0,
+                            "agreement": True,
+                        },
+                    }
+                },
+            }
+            with open(ckpt_path, "w") as f:
+                f.write(json.dumps(old_record) + "\n")
+
+            cfg = EvalConfig(
+                api_key="dummy",
+                output_dir=tmpdir,
+                scenarios=[],
+                style_only=True,
+                style_suites=[],
+                judge_model="judge-primary",
+                judge_model_secondary="judge-secondary",
+                judge_disagreement_threshold=0.4,
+            )
+            with patch(
+                "helm_eval_lex_quirks.runner.create_client",
+                side_effect=[JudgeClient(), JudgeClient()],
+            ):
+                result = EvalRunner(cfg)._run_tic_suite(
+                    client=SubjectClient(),
+                    model_name="subject-model",
+                    suite=self._suite(),
+                    samples=2,
+                )
+
+            with open(ckpt_path) as f:
+                records = [json.loads(line) for line in f if line.strip()]
+
+        self.assertEqual(len(records), 2)
+        self.assertTrue(
+            all(
+                "secondary_score" in rec["detectors"]["sycophancy"].get("metadata", {})
+                for rec in records
+            )
+        )
+        agreement = result["judge_agreement"]["overall"]
+        self.assertEqual(agreement["n"], 2)
+
+    def test_extract_judge_disagreements_skips_records_without_secondary_score(self):
+        record = {
+            "condition": "neutral",
+            "task_type": "general",
+            "detectors": {
+                "sycophancy": {
+                    "score": 0.7,
+                    "metadata": {"agreement": True},
+                }
+            },
+        }
+
+        rows = EvalRunner._extract_judge_disagreements(record)
+        self.assertEqual(rows, [])
 
 
 class LLMJudgeDetectorParsingTests(unittest.TestCase):

@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 from helm_eval_lex_quirks.report import save
+from helm_eval_lex_quirks.report import format_table
 from helm_eval_lex_quirks.runner import EvalResults, ScenarioResults
 
 
@@ -82,6 +83,72 @@ class ReportOutputTests(unittest.TestCase):
         self.assertIn("HELM EVAL RESULTS", report_text)
         self.assertIn("TIC SUITE DETECTION", report_text)
         self.assertIn("PAIRWISE PREFERENCE", report_text)
+
+    def test_format_table_includes_dual_judge_agreement_summary(self):
+        results = {
+            "model-a": EvalResults(
+                model="model-a",
+                tic_results={
+                    "llm_judge_tone": {
+                        "analysis": {
+                            "neutral": {
+                                "n_outputs": 1,
+                                "detectors": {
+                                    "sycophancy": {
+                                        "pct_hit": 100.0,
+                                        "pct_hit_ci_low": 20.0,
+                                        "pct_hit_ci_high": 100.0,
+                                        "mean_count": 1.0,
+                                    }
+                                },
+                            }
+                        },
+                        "judge": {
+                            "model": "judge-primary",
+                            "token_usage": {"input": 10, "output": 4},
+                            "cost_usd": 0.001,
+                        },
+                        "judge_secondary": {
+                            "model": "judge-secondary",
+                            "token_usage": {"input": 9, "output": 3},
+                            "cost_usd": 0.0009,
+                        },
+                        "judge_agreement": {
+                            "threshold": 0.4,
+                            "overall": {
+                                "n": 1,
+                                "agreement_pct": 0.0,
+                                "mean_abs_score_delta": 0.9,
+                                "high_disagreement_pct": 100.0,
+                            },
+                            "conditions": {
+                                "neutral": {
+                                    "n": 1,
+                                    "agreement_pct": 0.0,
+                                    "mean_abs_score_delta": 0.9,
+                                    "high_disagreement_pct": 100.0,
+                                }
+                            },
+                            "top_disagreements": [
+                                {
+                                    "detector": "sycophancy",
+                                    "condition": "neutral",
+                                    "task_type": "general",
+                                    "score_delta": 0.9,
+                                }
+                            ],
+                        },
+                        "task_segments": {},
+                    }
+                },
+            )
+        }
+
+        text = format_table(results)
+
+        self.assertIn("Judge secondary: judge-secondary", text)
+        self.assertIn("Judge agreement:", text)
+        self.assertIn("Top judge disagreements:", text)
 
 
 if __name__ == "__main__":
