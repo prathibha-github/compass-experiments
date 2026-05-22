@@ -71,6 +71,7 @@ class EvalConfig:
     style_suites: List[str]      = field(default_factory=list)
     style_only: bool             = False
     style_samples: int           = 4     # repetitions per prompt for generic tic suites
+    style_samples_increment: bool = False  # append new style samples instead of fixed [0..N-1]
     run_persona_transfer: bool   = False
     run_pairwise_preference: bool = False
     pairwise_detector: Optional[str] = None
