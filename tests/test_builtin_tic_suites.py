@@ -18,6 +18,7 @@ class BuiltinTicSuiteTests(unittest.TestCase):
         self.assertIn("formatting", result)
         self.assertIn("tone", result)
         self.assertNotIn("linkedin", result)
+        self.assertNotIn("llm_judge_tone", result)
         self.assertNotIn("rest_hypothesis", result)
         self.assertNotIn("rest_cai_validation", result)
 

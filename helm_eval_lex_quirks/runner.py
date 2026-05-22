@@ -19,7 +19,15 @@ from helm_eval_lex_quirks.metrics.linkedin_style import (
     compute_uplift,
 )
 from helm_eval_lex_quirks.metrics.robustness import compute_robustness_score, inject_typos
-from helm_eval_lex_quirks.metrics.tic_suite import TicSuite, analyze_text, summarize_outputs
+from helm_eval_lex_quirks.metrics.tic_suite import (
+    LLMJudgeDetector,
+    LLM_JUDGE_SYSTEM_PROMPT,
+    TicSuite,
+    analyze_text,
+    suite_uses_llm_judge,
+    summarize_detector_records,
+    summarize_outputs,
+)
 from helm_eval_lex_quirks.models import CompletionClient, create_client
 from helm_eval_lex_quirks.scenarios.base import Instance, Scenario
 from helm_eval_lex_quirks.scenarios.bbq import BBQScenario
@@ -109,6 +117,21 @@ class EvalRunner:
                     ["x" * 100] * n_calls,
                     max_tokens=suite.max_tokens,
                 )
+                if self.config.judge_model and suite_uses_llm_judge(suite):
+                    judge_detectors = [
+                        detector for detector in suite.detectors
+                        if isinstance(detector, LLMJudgeDetector)
+                    ]
+                    judge_calls = n_calls * len(judge_detectors)
+                    max_judge_tokens = max(
+                        (detector.max_tokens for detector in judge_detectors),
+                        default=1,
+                    )
+                    total += estimate_model_cost(
+                        self.config.judge_model,
+                        ["x" * 1200] * judge_calls,
+                        max_tokens=max_judge_tokens,
+                    )
             estimates[model_name] = round(total, 4)
         return estimates
 
@@ -406,6 +429,13 @@ class EvalRunner:
             prompt.task_type: {c.name: [] for c in suite.conditions}
             for prompt in suite.prompts
         }
+        condition_detector_records: Dict[str, List[Dict[str, dict]]] = {
+            c.name: [] for c in suite.conditions
+        }
+        task_detector_records: Dict[str, Dict[str, List[Dict[str, dict]]]] = {
+            prompt.task_type: {c.name: [] for c in suite.conditions}
+            for prompt in suite.prompts
+        }
         safe_model = model_name.replace("/", "_").replace(":", "_")
         ckpt_path = os.path.join(
             self.config.output_dir,
@@ -414,6 +444,22 @@ class EvalRunner:
         )
         os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
 
+        judge_client: Optional[CompletionClient] = None
+        judge_fn = None
+        if suite_uses_llm_judge(suite):
+            if not self.config.judge_model:
+                raise ValueError(f"Suite {suite.name!r} requires --judge-model.")
+            judge_client = create_client(self.config, self.config.judge_model)
+
+            def judge_fn(prompt: str, max_tokens: int) -> str:
+                resp = judge_client.complete(
+                    prompt,
+                    max_tokens=max_tokens,
+                    logprobs=False,
+                    system=LLM_JUDGE_SYSTEM_PROMPT,
+                )
+                return resp.completion
+
         done, resumed_outputs = self._load_tic_checkpoint(ckpt_path, suite)
         for condition, outputs in resumed_outputs.items():
             condition_outputs[condition].extend(outputs)
@@ -421,8 +467,13 @@ class EvalRunner:
             condition = rec.get("condition")
             task_type = self._record_task_type(rec, suite)
             completion = rec.get("completion")
+            detectors = rec.get("detectors")
             if condition in condition_outputs and completion and task_type in task_outputs:
                 task_outputs[task_type][condition].append(completion)
+            if condition in condition_detector_records and isinstance(detectors, dict):
+                condition_detector_records[condition].append(detectors)
+                if task_type in task_detector_records:
+                    task_detector_records[task_type][condition].append(detectors)
 
         total_calls = len(suite.prompts) * len(suite.conditions) * samples
         pbar = tqdm(total=total_calls, desc=progress_label or suite.name, leave=False)
@@ -446,7 +497,17 @@ class EvalRunner:
                             completion = resp.completion
                             condition_outputs[condition.name].append(completion)
                             task_outputs[prompt.task_type][condition.name].append(completion)
-                            detector_results = analyze_text(completion, suite)
+                            detector_results = analyze_text(
+                                completion,
+                                suite,
+                                judge_fn=judge_fn,
+                            )
+                            detector_record = {
+                                name: result.to_dict()
+                                for name, result in detector_results.items()
+                            }
+                            condition_detector_records[condition.name].append(detector_record)
+                            task_detector_records[prompt.task_type][condition.name].append(detector_record)
 
                             record = {
                                 "schema_version": TIC_CHECKPOINT_SCHEMA_VERSION,
@@ -459,10 +520,7 @@ class EvalRunner:
                                 "sample_idx": sample_idx,
                                 "prompt": prompt.text,
                                 "completion": completion,
-                                "detectors": {
-                                    name: result.to_dict()
-                                    for name, result in detector_results.items()
-                                },
+                                "detectors": detector_record,
                             }
                             record.update(suite.extra_record_fields(completion, detector_results))
                             ckpt_f.write(json.dumps(record) + "\n")
@@ -477,26 +535,41 @@ class EvalRunner:
                             )
         pbar.close()
 
-        analysis = (
-            analyze_fn(condition_outputs) if analyze_fn else summarize_outputs(condition_outputs, suite)
-        )
+        uses_judge = suite_uses_llm_judge(suite)
+        if analyze_fn:
+            analysis = analyze_fn(condition_outputs)
+        elif uses_judge:
+            analysis = summarize_detector_records(condition_detector_records, suite)
+        else:
+            analysis = summarize_outputs(condition_outputs, suite)
         uplift = (
             uplift_fn(analysis, suite.baseline_condition)
             if uplift_fn
             else {}
         )
-        return {
+        result = {
             "suite": suite.name,
             "analysis": analysis,
             "uplift": uplift,
             "task_segments": {
                 task_type: (
-                    analyze_fn(outputs) if analyze_fn else summarize_outputs(outputs, suite)
+                    analyze_fn(outputs)
+                    if analyze_fn
+                    else summarize_detector_records(task_detector_records[task_type], suite)
+                    if uses_judge
+                    else summarize_outputs(outputs, suite)
                 )
                 for task_type, outputs in task_outputs.items()
             },
             "checkpoint_path": ckpt_path,
         }
+        if judge_client and self.config.judge_model:
+            result["judge"] = {
+                "model": self.config.judge_model,
+                "token_usage": judge_client.total_tokens,
+                "cost_usd": round(judge_client.total_cost_usd, 6),
+            }
+        return result
 
     @staticmethod
     def _record_task_type(rec: dict, suite: TicSuite) -> str:

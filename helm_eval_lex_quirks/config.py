@@ -74,6 +74,7 @@ class EvalConfig:
     run_persona_transfer: bool   = False
     run_pairwise_preference: bool = False
     pairwise_detector: Optional[str] = None
+    judge_model: Optional[str]   = None
     seed: int                    = 42
     dry_run: bool                = False
     request_interval: float      = 2.0   # seconds between API calls; increase for free-tier accounts
