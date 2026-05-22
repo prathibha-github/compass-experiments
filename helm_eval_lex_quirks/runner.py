@@ -2,6 +2,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
@@ -145,6 +146,9 @@ class EvalRunner:
             pairwise = analyze_pairwise_preference(
                 out,
                 detector_name=self.config.pairwise_detector,
+                method=self.config.pairwise_method,
+                segment_by=self.config.pairwise_segment_by,
+                time_decay_halflife_days=self.config.pairwise_time_decay_halflife_days,
             )
             for result in out.values():
                 result.pairwise_preference_results = pairwise
@@ -280,6 +284,7 @@ class EvalRunner:
 
                     record: dict = {
                         "id":                    inst.id,
+                        "created_at":            datetime.now(timezone.utc).isoformat(),
                         "prompt":                prompt,
                         "completion":            resp.completion,
                         "prediction":            pred,
@@ -290,6 +295,8 @@ class EvalRunner:
                         "perturbed_is_correct":  p_ok,
                         "metadata":              inst.metadata,
                     }
+                    if self.config.run_tag:
+                        record["run_tag"] = self.config.run_tag
                     done[inst.id] = record
                     ckpt_f.write(json.dumps(record) + "\n")
                     ckpt_f.flush()
@@ -511,6 +518,7 @@ class EvalRunner:
 
                             record = {
                                 "schema_version": TIC_CHECKPOINT_SCHEMA_VERSION,
+                                "created_at": datetime.now(timezone.utc).isoformat(),
                                 "model": model_name,
                                 "suite": suite.name,
                                 "condition": condition.name,
@@ -522,6 +530,8 @@ class EvalRunner:
                                 "completion": completion,
                                 "detectors": detector_record,
                             }
+                            if self.config.run_tag:
+                                record["run_tag"] = self.config.run_tag
                             record.update(suite.extra_record_fields(completion, detector_results))
                             ckpt_f.write(json.dumps(record) + "\n")
                             ckpt_f.flush()

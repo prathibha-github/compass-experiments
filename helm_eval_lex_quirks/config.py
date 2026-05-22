@@ -74,6 +74,10 @@ class EvalConfig:
     run_persona_transfer: bool   = False
     run_pairwise_preference: bool = False
     pairwise_detector: Optional[str] = None
+    pairwise_method: str         = "count"
+    pairwise_segment_by: str     = "task_type"
+    pairwise_time_decay_halflife_days: Optional[int] = None
+    run_tag: Optional[str]       = None
     judge_model: Optional[str]   = None
     seed: int                    = 42
     dry_run: bool                = False
