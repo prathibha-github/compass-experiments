@@ -188,12 +188,11 @@ def _append_pairwise_section(lines: List[str], results_by_model: Dict[str, EvalR
                 )
 
 
-def _append_model_result_sections(
+def _append_accuracy_section(
     lines: List[str],
     results_by_model: Dict[str, EvalResults],
     models: List[str],
     scenario_names: List[str],
-    sep: str,
 ) -> None:
     col = 20
     lines.append(f"{'Scenario':<{col}}" + "  ".join(
@@ -226,6 +225,8 @@ def _append_model_result_sections(
         if accs:
             lines.append(f"{'Mean':<{col}}  {sum(accs)/len(accs):>7.4f}   [{m}]")
 
+
+def _append_bbq_sections(lines: List[str], results_by_model: Dict[str, EvalResults]) -> None:
     for m, res in results_by_model.items():
         sr = res.scenario_results.get("bbq")
         if sr and sr.ambig_unknown_rate is not None:
@@ -238,6 +239,13 @@ def _append_model_result_sections(
             if sr.disambig_accuracy is not None:
                 lines.append(f"    Disambiguated accuracy        : {sr.disambig_accuracy:.4f}")
 
+
+def _append_linkedin_cross_model_section(
+    lines: List[str],
+    results_by_model: Dict[str, EvalResults],
+    models: List[str],
+    sep: str,
+) -> None:
     if any(res.linkedin_results for res in results_by_model.values()):
         lines += ["", sep, "  LINKEDIN STYLE — CROSS-MODEL COMPARISON", ""]
         conditions = ("neutral", "professional", "mildly_positive", "linkedin_style")
@@ -265,6 +273,8 @@ def _append_model_result_sections(
             row += "  ".join(f"{data:<14}" for data in cond_data)
             lines.append(row)
 
+
+def _append_cost_section(lines: List[str], results_by_model: Dict[str, EvalResults], sep: str) -> None:
     lines += ["", sep, "  COST SUMMARY", "-" * 96]
     for m, res in results_by_model.items():
         tok = res.token_usage
@@ -273,11 +283,15 @@ def _append_model_result_sections(
             f"({tok.get('input',0):,} in + {tok.get('output',0):,} out tokens)"
         )
 
+
+def _append_checkpoint_section(lines: List[str], results_by_model: Dict[str, EvalResults], sep: str) -> None:
     lines += ["", sep, "  PER-INSTANCE RECORDS (JSONL checkpoints)", "-" * 96]
     for m, res in results_by_model.items():
         for sname, sr in res.scenario_results.items():
             lines.append(f"  {m}/{sname:<18}  {sr.checkpoint_path}")
 
+
+def _append_quirk_sections(lines: List[str], results_by_model: Dict[str, EvalResults], sep: str) -> None:
     for m, res in results_by_model.items():
         if not res.quirk_results:
             continue
@@ -294,6 +308,8 @@ def _append_model_result_sections(
             cnt = "/".join(str(cts.get(c, 0)) for c in ("neutral", "playful", "professional", "friendly"))
             lines.append(f"  {q['word']:<22}  {q['lift']:>6.2f}  {q['dominant_condition']:<22}  {cnt}")
 
+
+def _append_linkedin_style_sections(lines: List[str], results_by_model: Dict[str, EvalResults], sep: str) -> None:
     for m, res in results_by_model.items():
         if not res.linkedin_results:
             continue
@@ -318,6 +334,22 @@ def _append_model_result_sections(
         checkpoint_path = res.linkedin_results.get("checkpoint_path")
         if checkpoint_path:
             lines.append(f"  Checkpoint: {checkpoint_path}")
+
+
+def _append_model_result_sections(
+    lines: List[str],
+    results_by_model: Dict[str, EvalResults],
+    models: List[str],
+    scenario_names: List[str],
+    sep: str,
+) -> None:
+    _append_accuracy_section(lines, results_by_model, models, scenario_names)
+    _append_bbq_sections(lines, results_by_model)
+    _append_linkedin_cross_model_section(lines, results_by_model, models, sep)
+    _append_cost_section(lines, results_by_model, sep)
+    _append_checkpoint_section(lines, results_by_model, sep)
+    _append_quirk_sections(lines, results_by_model, sep)
+    _append_linkedin_style_sections(lines, results_by_model, sep)
 
 
 def format_table(results_by_model: Dict[str, EvalResults]) -> str:
