@@ -44,6 +44,10 @@ python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-
   --style-only --style-suite llm_judge_tone --judge-model gpt-4o-mini \
   --judge-model-secondary claude-haiku-4-5-20251001 \
   --judge-disagreement-threshold 0.4 --models claude-sonnet-4-6
+
+# Emit a safety-case markdown report with deep-dive candidates
+python -m helm_eval_lex_quirks.main --style-only --style-suite all \
+  --deep-dive-top-k 10 --safety-thresholds configs/thresholds.yaml
 """
 import argparse
 import json
@@ -200,6 +204,17 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         default=0.4,
         help="Absolute score-delta threshold for flagging high judge disagreement",
     )
+    parser.add_argument(
+        "--safety-thresholds",
+        default="configs/thresholds.yaml",
+        help="Path to YAML threshold config used for safety-case report generation",
+    )
+    parser.add_argument(
+        "--deep-dive-top-k",
+        type=int,
+        default=0,
+        help="Number of high-risk/uncertain detector slices to include in safety-case deep dive",
+    )
     parser.add_argument("--seed",             type=int,   default=42)
     parser.add_argument("--request-interval", type=float, default=2.0,
                         help="Seconds between API calls. Raise to 4-6 for free-tier accounts.")
@@ -247,6 +262,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     if not (0.0 <= args.judge_disagreement_threshold <= 1.0):
         print("ERROR: --judge-disagreement-threshold must be in [0, 1].", file=sys.stderr)
         sys.exit(1)
+    if args.deep_dive_top_k < 0:
+        print("ERROR: --deep-dive-top-k must be >= 0.", file=sys.stderr)
+        sys.exit(1)
     if args.pairwise_from_results:
         try:
             _run_pairwise_from_results(args)
@@ -292,6 +310,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         judge_model=args.judge_model,
         judge_model_secondary=args.judge_model_secondary,
         judge_disagreement_threshold=args.judge_disagreement_threshold,
+        safety_thresholds_path=args.safety_thresholds,
+        deep_dive_top_k=args.deep_dive_top_k,
         seed=args.seed,
         dry_run=args.dry_run,
         request_interval=args.request_interval,
@@ -329,6 +349,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             extras.append(f"judge-model={cfg.judge_model}")
         if cfg.judge_model_secondary:
             extras.append(f"judge-model-secondary={cfg.judge_model_secondary}")
+        if cfg.deep_dive_top_k > 0:
+            extras.append(f"deep-dive-top-k={cfg.deep_dive_top_k}")
         extra_str = f"  [{', '.join(extras)}]" if extras else ""
         print(f"  {model:<20}  ~${cost:.4f}{extra_str}")
 
@@ -340,10 +362,18 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     results = runner.run()
 
     json_path, txt_path = rpt.save(results, cfg.output_dir)
+    safety_path = rpt.save_safety_case(
+        results,
+        cfg.output_dir,
+        thresholds_path=cfg.safety_thresholds_path,
+        deep_dive_top_k=cfg.deep_dive_top_k,
+    )
     print()
     print(rpt.format_table(results))
     print(f"\nFull JSON : {json_path}")
     print(f"Summary   : {txt_path}")
+    if safety_path:
+        print(f"Safety Case: {safety_path}")
 
 
 if __name__ == "__main__":

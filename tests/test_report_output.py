@@ -5,6 +5,7 @@ import unittest
 
 from helm_eval_lex_quirks.report import save
 from helm_eval_lex_quirks.report import format_table
+from helm_eval_lex_quirks.report import save_safety_case
 from helm_eval_lex_quirks.runner import EvalResults, ScenarioResults
 
 
@@ -149,6 +150,210 @@ class ReportOutputTests(unittest.TestCase):
         self.assertIn("Judge secondary: judge-secondary", text)
         self.assertIn("Judge agreement:", text)
         self.assertIn("Top judge disagreements:", text)
+
+    def test_save_safety_case_reports_crossings_and_deep_dive(self):
+        results = {
+            "model-a": EvalResults(
+                model="model-a",
+                tic_results={
+                    "llm_judge_tone": {
+                        "analysis": {
+                            "playful": {
+                                "n_outputs": 12,
+                                "low_sample": True,
+                                "detectors": {
+                                    "sycophancy": {
+                                        "pct_hit": 80.0,
+                                        "pct_hit_ci_low": 50.0,
+                                        "pct_hit_ci_high": 95.0,
+                                        "mean_count": 0.8,
+                                    }
+                                },
+                            }
+                        },
+                        "task_segments": {
+                            "disagreement": {
+                                "playful": {
+                                    "n_outputs": 3,
+                                    "low_sample": True,
+                                    "detectors": {
+                                        "sycophancy": {
+                                            "pct_hit": 100.0,
+                                            "pct_hit_ci_low": 43.8,
+                                            "pct_hit_ci_high": 100.0,
+                                            "mean_count": 1.0,
+                                        }
+                                    },
+                                }
+                            }
+                        },
+                    }
+                },
+            )
+        }
+        thresholds_yaml = """suites:
+  llm_judge_tone:
+    detectors:
+      sycophancy:
+        max_pct_hit: 25.0
+"""
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            thresholds_path = os.path.join(tmpdir, "thresholds.yaml")
+            with open(thresholds_path, "w") as f:
+                f.write(thresholds_yaml)
+            path = save_safety_case(
+                results,
+                tmpdir,
+                thresholds_path=thresholds_path,
+                deep_dive_top_k=3,
+            )
+            with open(path) as f:
+                text = f.read()
+
+        self.assertTrue(path.endswith(".md"))
+        self.assertIn("Safety Case Report", text)
+        self.assertIn("Threshold Crossings", text)
+        self.assertIn("sycophancy", text)
+        self.assertIn("Deep Dive Candidates", text)
+        self.assertIn("Recommendations", text)
+
+    def test_save_safety_case_handles_missing_or_invalid_yaml(self):
+        results = {
+            "model-a": EvalResults(
+                model="model-a",
+                tic_results={
+                    "llm_judge_tone": {
+                        "analysis": {
+                            "neutral": {
+                                "n_outputs": 3,
+                                "detectors": {
+                                    "sycophancy": {
+                                        "pct_hit": 10.0,
+                                        "pct_hit_ci_low": 0.0,
+                                        "pct_hit_ci_high": 56.2,
+                                        "mean_count": 0.1,
+                                    }
+                                },
+                            }
+                        },
+                        "task_segments": {},
+                    }
+                },
+            )
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing_path = os.path.join(tmpdir, "missing.yaml")
+            missing_report = save_safety_case(results, tmpdir, thresholds_path=missing_path)
+            with open(missing_report) as f:
+                missing_text = f.read()
+
+            invalid_path = os.path.join(tmpdir, "invalid.yaml")
+            with open(invalid_path, "w") as f:
+                f.write("suites: [broken\n")
+            invalid_report = save_safety_case(results, tmpdir, thresholds_path=invalid_path)
+            with open(invalid_report) as f:
+                invalid_text = f.read()
+
+        self.assertIn("Threshold config: not found/empty", missing_text)
+        self.assertIn("Threshold config: not found/empty", invalid_text)
+
+    def test_save_safety_case_returns_empty_string_for_empty_results(self):
+        self.assertEqual(save_safety_case({}, tempfile.gettempdir()), "")
+        self.assertEqual(
+            save_safety_case({"model-a": EvalResults(model="model-a")}, tempfile.gettempdir()),
+            "",
+        )
+
+    def test_save_safety_case_truncates_crossings_table_to_50_rows(self):
+        detectors = {
+            f"det_{idx}": {
+                "pct_hit": 100.0,
+                "pct_hit_ci_low": 10.0,
+                "pct_hit_ci_high": 95.0,
+                "mean_count": 1.0,
+            }
+            for idx in range(60)
+        }
+        results = {
+            "model-a": EvalResults(
+                model="model-a",
+                tic_results={
+                    "llm_judge_tone": {
+                        "analysis": {
+                            "playful": {
+                                "n_outputs": 12,
+                                "low_sample": True,
+                                "detectors": detectors,
+                            }
+                        },
+                        "task_segments": {},
+                    }
+                },
+            )
+        }
+        thresholds_yaml = "suites:\n  llm_judge_tone:\n    detectors:\n" + "".join(
+            f"      det_{idx}:\n        max_pct_hit: 1.0\n" for idx in range(60)
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            thresholds_path = os.path.join(tmpdir, "thresholds.yaml")
+            with open(thresholds_path, "w") as f:
+                f.write(thresholds_yaml)
+            path = save_safety_case(
+                results,
+                tmpdir,
+                thresholds_path=thresholds_path,
+                deep_dive_top_k=0,
+            )
+            with open(path) as f:
+                text = f.read()
+
+        crossing_lines = [
+            line for line in text.splitlines()
+            if line.startswith("| model-a | llm_judge_tone |")
+        ]
+        self.assertEqual(len(crossing_lines), 50)
+
+    def test_save_safety_case_includes_uncertain_non_crossing_in_deep_dive(self):
+        results = {
+            "model-a": EvalResults(
+                model="model-a",
+                tic_results={
+                    "llm_judge_tone": {
+                        "analysis": {
+                            "neutral": {
+                                "n_outputs": 3,
+                                "low_sample": True,
+                                "detectors": {
+                                    "sycophancy": {
+                                        "pct_hit": 0.0,
+                                        "pct_hit_ci_low": 0.0,
+                                        "pct_hit_ci_high": 56.2,
+                                        "mean_count": 0.0,
+                                    }
+                                },
+                            }
+                        },
+                        "task_segments": {},
+                    }
+                },
+            )
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing_path = os.path.join(tmpdir, "missing.yaml")
+            path = save_safety_case(
+                results,
+                tmpdir,
+                thresholds_path=missing_path,
+                deep_dive_top_k=5,
+            )
+            with open(path) as f:
+                text = f.read()
+
+        self.assertIn("Deep Dive Candidates", text)
+        self.assertIn("| model-a | llm_judge_tone | condition | neutral | sycophancy |", text)
 
 
 if __name__ == "__main__":
