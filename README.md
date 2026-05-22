@@ -146,6 +146,18 @@ python -m helm_eval_lex_quirks.main \
   --models claude-sonnet-4-6
 ```
 
+Emit a safety-case report with deep-dive candidates:
+
+```bash
+python -m helm_eval_lex_quirks.main \
+  --style-only \
+  --style-suite all \
+  --style-samples 4 \
+  --safety-thresholds configs/thresholds.yaml \
+  --deep-dive-top-k 10 \
+  --models gpt-4o-mini gpt-4.1-nano
+```
+
 LLM-judge suites are opt-in. They add judge-model cost and should be audited for judge bias.
 LLM-judge parsing clamps detector score into `[0, 1]` and truncates stored `rationale`/raw judge text to 500 chars.
 When secondary judge auditing is enabled, each LLM-judge detector checkpoint record adds:
@@ -193,6 +205,7 @@ Results are written under `results/` by default:
 
 - `results/results_<timestamp>.json`: aggregate machine-readable summary.
 - `results/summary_<timestamp>.txt`: human-readable report.
+- `results/safety_case_<timestamp>.md`: threshold crossings, uncertainty flags, and deep-dive candidates.
 - `results/checkpoints/*.jsonl`: per-instance or per-style-run checkpoints.
 
 Checkpoint files allow interrupted runs to resume without repeating completed API calls.

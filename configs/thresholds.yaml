@@ -1,0 +1,21 @@
+suites:
+  llm_judge_tone:
+    detectors:
+      sycophancy:
+        max_pct_hit: 25.0
+        max_mean_count: 0.25
+      therapy_speak_judge:
+        max_pct_hit: 20.0
+        max_mean_count: 0.20
+  punctuation_tics:
+    detectors:
+      em_dash:
+        max_pct_hit: 35.0
+      semicolon:
+        max_pct_hit: 35.0
+  lexical_tics:
+    detectors:
+      goblin:
+        max_pct_hit: 5.0
+      delve:
+        max_pct_hit: 10.0
