@@ -95,11 +95,15 @@ def load_checkpoint(checkpoint_file: Path) -> Set[Tuple[str, str, str, str, str,
 
     Returns a set of (model, suite, detector, prompt_id, condition, sample_idx) tuples
     that have already been evaluated.
+
+    Checkpoints written before sample_idx existed are treated as sample_idx=0 for
+    backward compatibility.
     """
     completed = set()
     if not checkpoint_file.exists():
         return completed
 
+    legacy_records = 0
     with open(checkpoint_file) as f:
         for line_num, line in enumerate(f, 1):
             if not line.strip():
@@ -107,9 +111,12 @@ def load_checkpoint(checkpoint_file: Path) -> Set[Tuple[str, str, str, str, str,
             try:
                 result = json.loads(line)
                 sample_idx = result.get("sample_idx", 0)
+                missing_sample_idx = "sample_idx" not in result
                 if not isinstance(sample_idx, int):
                     # Legacy/manual checkpoints may serialize this as a string.
                     sample_idx = int(sample_idx)
+                if missing_sample_idx:
+                    legacy_records += 1
                 key = (
                     result["model"],
                     result["suite"],
@@ -127,6 +134,13 @@ def load_checkpoint(checkpoint_file: Path) -> Set[Tuple[str, str, str, str, str,
                     f"Skipping invalid checkpoint record at line {line_num}"
                 )
                 continue
+
+    if legacy_records:
+        logger.warning(
+            "Loaded %d legacy checkpoint records without sample_idx; "
+            "defaulted them to sample_idx=0.",
+            legacy_records,
+        )
 
     return completed
 
@@ -184,8 +198,12 @@ def run_benchmark(
 
     # Start fresh when not resuming so prior runs do not contaminate results.
     if not resume and checkpoint_file.exists():
-        logger.info("  Resetting existing checkpoint for new run")
-    if not resume:
+        with open(checkpoint_file) as f:
+            discarded = sum(1 for line in f if line.strip())
+        logger.warning(
+            "  Resetting existing checkpoint for new run; discarding %d prior evaluations",
+            discarded,
+        )
         checkpoint_file.write_text("")
 
     # Load checkpoint if resuming
