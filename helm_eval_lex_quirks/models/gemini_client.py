@@ -25,21 +25,16 @@ class GeminiClient:
         request_interval: float = 2.0,
     ):
         try:
-            import google.generativeai as genai
+            from google import genai
         except ImportError as exc:
             raise ImportError(
-                "Gemini support requires the 'google-generativeai' package. "
-                "Run: pip install google-generativeai"
+                "Gemini support requires the 'google-genai' package. "
+                "Run: pip install google-genai"
             ) from exc
 
         self._genai = genai
-        # genai.configure() sets the API key globally; this limits the harness to a single
-        # Google API key per run. Multiple Gemini models must share the same key.
-        genai.configure(api_key=api_key)
-        self.client = genai.GenerativeModel(
-            model,
-            system_instruction="You are a helpful assistant.",
-        )
+        # Use per-instance client configuration (not global genai.configure)
+        self.client = genai.Client(api_key=api_key)
         self.model = model
         self.config: ModelConfig = model_config(model)
         self._input_tokens = 0
@@ -102,45 +97,27 @@ class GeminiClient:
             self._last_call_at = time.monotonic()
 
             try:
-                response = self.client.generate_content(
-                    prompt,
-                    generation_config={
+                # Build full prompt with system instruction
+                full_prompt = f"{system}\n\n{prompt}"
+
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=full_prompt,
+                    config={
                         "max_output_tokens": max_tokens,
                         "temperature": temperature,
                     },
-                    safety_settings=[
-                        {
-                            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                            "threshold": "BLOCK_NONE",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_HATE_SPEECH",
-                            "threshold": "BLOCK_NONE",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_HARASSMENT",
-                            "threshold": "BLOCK_NONE",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                            "threshold": "BLOCK_NONE",
-                        },
-                    ],
                 )
 
-                usage = getattr(response, "usage_metadata", None)
-                input_tokens = getattr(usage, "prompt_token_count", 0) if usage else 0
-                output_tokens = getattr(usage, "candidates_token_count", 0) if usage else 0
+                completion = response.text if response.text else ""
+
+                # Estimate tokens (google-genai may not always provide exact counts)
+                input_tokens = len(full_prompt.split())
+                output_tokens = len(completion.split())
+
                 self._input_tokens += input_tokens
                 self._output_tokens += output_tokens
                 self._request_count += 1
-
-                # Check if response has valid candidates before accessing text property,
-                # which raises ValueError when all candidates are filtered out.
-                if response.candidates and len(response.candidates) > 0:
-                    completion = response.text
-                else:
-                    completion = ""
 
                 return ModelResponse(
                     completion=completion.strip(),
