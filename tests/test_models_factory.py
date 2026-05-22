@@ -44,6 +44,18 @@ class ModelFactoryTests(unittest.TestCase):
         self.assertEqual(out, "anthropic")
         patched.assert_called_once_with("anthropic-key", "claude-haiku-4-5-20251001", cfg.request_interval)
 
+    def test_create_client_requires_google_key(self):
+        cfg = self._config(google_api_key=None)
+        with self.assertRaisesRegex(ValueError, "requires --google-api-key"):
+            create_client(cfg, "gemini-2.0-flash")
+
+    def test_create_client_routes_gemini_model(self):
+        cfg = self._config(google_api_key="fake-google-key")
+        with patch("helm_eval_lex_quirks.models.GeminiClient", return_value="gemini") as patched:
+            out = create_client(cfg, "gemini-2.0-flash")
+        self.assertEqual(out, "gemini")
+        patched.assert_called_once_with("fake-google-key", "gemini-2.0-flash", cfg.request_interval)
+
 
 if __name__ == "__main__":
     unittest.main()

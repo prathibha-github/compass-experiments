@@ -2,6 +2,7 @@ from typing import Protocol
 
 from helm_eval_lex_quirks.config import EvalConfig, model_provider
 from helm_eval_lex_quirks.models.anthropic_client import AnthropicClient
+from helm_eval_lex_quirks.models.gemini_client import GeminiClient
 from helm_eval_lex_quirks.models.openai_client import OpenAIClient
 from helm_eval_lex_quirks.models.openai_responses_client import OpenAIResponsesClient
 
@@ -36,6 +37,13 @@ def create_client(config: EvalConfig, model_name: str) -> CompletionClient:
                 f"Model {model_name!r} requires --anthropic-api-key or ANTHROPIC_API_KEY."
             )
         return AnthropicClient(config.anthropic_api_key, model_name, config.request_interval)
+
+    if provider == "google":
+        if not config.google_api_key:
+            raise ValueError(
+                f"Model {model_name!r} requires --google-api-key or GOOGLE_API_KEY."
+            )
+        return GeminiClient(config.google_api_key, model_name, config.request_interval)
 
     # GPT-5 models use the Responses API
     if model_name.startswith("gpt-5"):

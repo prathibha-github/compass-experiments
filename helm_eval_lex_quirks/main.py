@@ -16,6 +16,10 @@ python -m helm_eval_lex_quirks.main --api-key sk-... --n-samples 20 --no-robustn
 python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-... \
   --models gpt-4o-mini claude-haiku-4-5-20251001
 
+# Evaluate Gemini models
+python -m helm_eval_lex_quirks.main --google-api-key AIzaSy... \
+  --models gemini-2.0-flash gemini-1.5-pro
+
 # Run LinkedIn style detection
 python -m helm_eval_lex_quirks.main --api-key sk-... --linkedin-style
 
@@ -138,8 +142,10 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                         help="OpenAI API key (or set OPENAI_API_KEY env var)")
     parser.add_argument("--anthropic-api-key", default=os.environ.get("ANTHROPIC_API_KEY"),
                         help="Anthropic API key for Claude models (or set ANTHROPIC_API_KEY)")
+    parser.add_argument("--google-api-key", default=os.environ.get("GOOGLE_API_KEY"),
+                        help="Google API key for Gemini models (or set GOOGLE_API_KEY env var)")
     parser.add_argument("--models",    nargs="+", default=["gpt-4o-mini"],
-                        help="Model names (gpt-4o-mini, gpt-4.1-nano, claude-haiku-4-5-20251001, claude-sonnet-4-6, etc.)")
+                        help="Model names (gpt-4o-mini, gpt-4.1-nano, claude-haiku-4-5-20251001, claude-sonnet-4-6, gemini-2.0-flash, etc.)")
     parser.add_argument("--scenarios", nargs="+", default=list(DEFAULT_SCENARIO_CONFIGS),
                         choices=list(SCENARIO_REGISTRY))
     parser.add_argument("--n-samples", type=int, default=None,
@@ -295,10 +301,14 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     if "anthropic" in providers and not args.anthropic_api_key and not args.dry_run:
         print("ERROR: Claude models require --anthropic-api-key or ANTHROPIC_API_KEY.", file=sys.stderr)
         sys.exit(1)
+    if "google" in providers and not args.google_api_key and not args.dry_run:
+        print("ERROR: Gemini models require --google-api-key or GOOGLE_API_KEY.", file=sys.stderr)
+        sys.exit(1)
 
     cfg = EvalConfig(
         api_key=args.api_key,
         anthropic_api_key=args.anthropic_api_key,
+        google_api_key=args.google_api_key,
         models=args.models,
         scenarios=args.scenarios,
         n_samples=args.n_samples,
