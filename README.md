@@ -87,6 +87,17 @@ python -m helm_eval_lex_quirks.main \
   --models gpt-4o-mini gpt-4.1-nano gpt-5-nano
 ```
 
+Score pairwise comparison with a single detector:
+
+```bash
+python -m helm_eval_lex_quirks.main \
+  --style-only \
+  --style-suite rest_cai_validation \
+  --style-samples 5 \
+  --pairwise-detector rest_suggestion \
+  --models claude-haiku-4-5-20251001 claude-sonnet-4-6 claude-opus-4-6
+```
+
 ## Persona Transfer
 
 Persona transfer compares each style/persona condition against a suite baseline. It measures whether a persona system prompt increases tic prevalence on neutral task prompts. It does not measure persistent cross-session model memory; public API calls are stateless unless the caller supplies prior messages.

@@ -161,7 +161,7 @@ def _append_pairwise_section(lines: List[str], results_by_model: Dict[str, EvalR
         "",
         sep,
         "  PAIRWISE PREFERENCE",
-        "  Lower detector-count total wins on shared style-suite records",
+        _pairwise_scoring_text(pairwise),
         "-" * 96,
     ]
     for suite_name, suite_results in pairwise.items():
@@ -186,6 +186,18 @@ def _append_pairwise_section(lines: List[str], results_by_model: Dict[str, EvalR
                     f"leader={leader['model']:<24}  "
                     f"score={leader['preference_score']:>6.2f}"
                 )
+
+
+def _pairwise_scoring_text(pairwise: Dict[str, dict]) -> str:
+    detectors = {
+        suite_results.get("scoring", {}).get("detector")
+        for suite_results in pairwise.values()
+        if suite_results.get("scoring", {}).get("detector")
+    }
+    if len(detectors) == 1:
+        detector = next(iter(detectors))
+        return f"  Lower {detector} detector count wins on shared style-suite records"
+    return "  Lower detector-count total wins on shared style-suite records"
 
 
 def _append_accuracy_section(
