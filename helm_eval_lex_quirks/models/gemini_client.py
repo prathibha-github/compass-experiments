@@ -25,21 +25,16 @@ class GeminiClient:
         request_interval: float = 2.0,
     ):
         try:
-            import google.generativeai as genai
+            from google import genai
         except ImportError as exc:
             raise ImportError(
-                "Gemini support requires the 'google-generativeai' package. "
-                "Run: pip install google-generativeai"
+                "Gemini support requires the 'google-genai' package. "
+                "Run: pip install google-genai"
             ) from exc
 
         self._genai = genai
-        # genai.configure() sets the API key globally; this limits the harness to a single
-        # Google API key per run. Multiple Gemini models must share the same key.
-        genai.configure(api_key=api_key)
-        self.client = genai.GenerativeModel(
-            model,
-            system_instruction="You are a helpful assistant.",
-        )
+        # Use per-instance client configuration (not global genai.configure)
+        self.client = genai.Client(api_key=api_key)
         self.model = model
         self.config: ModelConfig = model_config(model)
         self._input_tokens = 0
@@ -87,12 +82,6 @@ class GeminiClient:
                 f"Model {self.model!r} has reached its maximum request limit of {self.config.max_requests}"
             )
 
-        if system != "You are a helpful assistant.":
-            logger.warning(
-                "Gemini client has a fixed system instruction set at construction time. "
-                "Per-call system prompts are not supported and will be ignored."
-            )
-
         if logprobs:
             logger.debug("Gemini API does not support token logprobs; returning None.")
 
@@ -102,30 +91,32 @@ class GeminiClient:
             self._last_call_at = time.monotonic()
 
             try:
-                response = self.client.generate_content(
-                    prompt,
-                    generation_config={
-                        "max_output_tokens": max_tokens,
-                        "temperature": temperature,
-                    },
-                    safety_settings=[
-                        {
-                            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                            "threshold": "BLOCK_NONE",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_HATE_SPEECH",
-                            "threshold": "BLOCK_NONE",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_HARASSMENT",
-                            "threshold": "BLOCK_NONE",
-                        },
-                        {
-                            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                            "threshold": "BLOCK_NONE",
-                        },
-                    ],
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=prompt,
+                    config=self._genai.types.GenerateContentConfig(
+                        max_output_tokens=max_tokens,
+                        temperature=temperature,
+                        system_instruction=system,
+                        safety_settings=[
+                            self._genai.types.SafetySetting(
+                                category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                                threshold="BLOCK_NONE",
+                            ),
+                            self._genai.types.SafetySetting(
+                                category="HARM_CATEGORY_HATE_SPEECH",
+                                threshold="BLOCK_NONE",
+                            ),
+                            self._genai.types.SafetySetting(
+                                category="HARM_CATEGORY_HARASSMENT",
+                                threshold="BLOCK_NONE",
+                            ),
+                            self._genai.types.SafetySetting(
+                                category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                                threshold="BLOCK_NONE",
+                            ),
+                        ],
+                    ),
                 )
 
                 usage = getattr(response, "usage_metadata", None)
@@ -148,10 +139,6 @@ class GeminiClient:
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                 )
-
-            except self._genai.types.BlockedPromptException as exc:
-                logger.error("Gemini API blocked prompt: %s", exc)
-                raise
 
             except Exception as exc:
                 error_name = type(exc).__name__
