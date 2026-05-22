@@ -32,6 +32,7 @@ import argparse
 import logging
 import os
 import sys
+from typing import Optional, Sequence
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,7 +46,7 @@ from helm_eval_lex_quirks.runner import SCENARIO_REGISTRY, EvalRunner
 from helm_eval_lex_quirks import report as rpt
 
 
-def main(argv=None):
+def main(argv: Optional[Sequence[str]] = None) -> None:
     parser = argparse.ArgumentParser(
         description="HELM-style eval harness for OpenAI models",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
