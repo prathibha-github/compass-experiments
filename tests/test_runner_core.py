@@ -1,8 +1,15 @@
+"""
+Unit tests for runner core logic.
+
+Covers unit-level branching for cost estimation, scenario loading/error paths,
+aggregation behavior, and judge disagreement helpers.
+"""
+
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from helm_eval_lex_quirks.config import EvalConfig, ScenarioConfig
+from helm_eval_lex_quirks.config import ScenarioConfig
 from helm_eval_lex_quirks.metrics.tic_suite import (
     EmojiDetector,
     StyleCondition,
@@ -15,20 +22,14 @@ from helm_eval_lex_quirks.runner import (
     estimate_model_cost,
 )
 from helm_eval_lex_quirks.scenarios.base import Instance
+from tests._test_base import make_eval_config
 
 
 class RunnerCoreTests(unittest.TestCase):
     def _config(self, **overrides):
-        base = dict(
-            api_key="dummy",
-            output_dir=tempfile.gettempdir(),
-            scenarios=[],
-            models=["gpt-4o-mini"],
-            style_only=True,
-            style_suites=[],
-        )
+        base = {"output_dir": tempfile.gettempdir()}
         base.update(overrides)
-        return EvalConfig(**base)
+        return make_eval_config(**base)
 
     def _suite(self):
         return TicSuite(
@@ -59,6 +60,29 @@ class RunnerCoreTests(unittest.TestCase):
         base_cost = EvalRunner(cfg_base).estimate_cost()["gpt-4o-mini"]
         judged_cost = EvalRunner(cfg_judged).estimate_cost()["gpt-4o-mini"]
         self.assertGreater(judged_cost, base_cost)
+
+    def test_estimate_cost_increases_with_robustness_and_judges_combined(self):
+        cfg_base = self._config(
+            scenarios=["boolq"],
+            style_only=False,
+            style_suites=["llm_judge_tone"],
+            style_samples=1,
+            run_robustness=False,
+            judge_model=None,
+            judge_model_secondary=None,
+        )
+        cfg_combo = self._config(
+            scenarios=["boolq"],
+            style_only=False,
+            style_suites=["llm_judge_tone"],
+            style_samples=1,
+            run_robustness=True,
+            judge_model="gpt-4o-mini",
+            judge_model_secondary="gpt-4.1-mini",
+        )
+        base_cost = EvalRunner(cfg_base).estimate_cost()["gpt-4o-mini"]
+        combo_cost = EvalRunner(cfg_combo).estimate_cost()["gpt-4o-mini"]
+        self.assertGreater(combo_cost, base_cost)
 
     def test_run_attaches_pairwise_results(self):
         cfg = self._config(
@@ -114,6 +138,52 @@ class RunnerCoreTests(unittest.TestCase):
                 result = runner._run_model(SubjectClient(), "gpt-4o-mini")
         self.assertEqual(result.scenario_results, {})
         self.assertIn("Failed to load broken", "\n".join(logs.output))
+
+    def test_run_model_mixed_scenario_success_and_failure(self):
+        class SubjectClient:
+            total_tokens = {"input": 0, "output": 0}
+            total_cost_usd = 0.0
+
+        class GoodScenario:
+            name = "good"
+
+            def load(self, n_samples, n_few_shot, seed):
+                return (["inst"], [])
+
+            def format_prompt(self, instance, few_shot):
+                return "prompt"
+
+        class BadScenario:
+            name = "bad"
+
+            def load(self, n_samples, n_few_shot, seed):
+                raise RuntimeError("boom")
+
+            def format_prompt(self, instance, few_shot):
+                return "prompt"
+
+        cfg = self._config(scenarios=["good", "bad"], style_only=False)
+        runner = EvalRunner(cfg)
+        with patch.dict(
+            "helm_eval_lex_quirks.runner.SCENARIO_REGISTRY",
+            {"good": GoodScenario, "bad": BadScenario},
+        ), patch.dict(
+            "helm_eval_lex_quirks.runner.DEFAULT_SCENARIO_CONFIGS",
+            {
+                "good": ScenarioConfig("good", n_samples=1, n_few_shot=0),
+                "bad": ScenarioConfig("bad", n_samples=1, n_few_shot=0),
+            },
+        ), patch.object(
+            runner,
+            "_eval_scenario",
+            return_value=object(),
+        ) as eval_mock:
+            with self.assertLogs("helm_eval_lex_quirks.runner", level="ERROR") as logs:
+                result = runner._run_model(SubjectClient(), "gpt-4o-mini")
+        self.assertIn("good", result.scenario_results)
+        self.assertNotIn("bad", result.scenario_results)
+        self.assertEqual(eval_mock.call_count, 1)
+        self.assertIn("Failed to load bad", "\n".join(logs.output))
 
     def test_aggregate_warnings_for_partial_and_missing_coverage(self):
         records_partial = [
