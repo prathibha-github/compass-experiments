@@ -87,6 +87,30 @@ python -m helm_eval_lex_quirks.main \
   --models gpt-4o-mini gpt-4.1-nano gpt-5-nano
 ```
 
+Run pairwise with Bradley-Terry, condition segmentation, and recency weighting:
+
+```bash
+python -m helm_eval_lex_quirks.main \
+  --style-only \
+  --style-suite all \
+  --style-samples 4 \
+  --pairwise-preference \
+  --pairwise-method bradley_terry \
+  --pairwise-segment-by condition \
+  --pairwise-time-decay-halflife-days 90 \
+  --models gpt-4o-mini gpt-4.1-nano gpt-5-nano
+```
+
+Recompute pairwise offline from an existing results JSON (no API calls):
+
+```bash
+python -m helm_eval_lex_quirks.main \
+  --pairwise-from-results results/results_20260522_072249.json \
+  --pairwise-method bradley_terry \
+  --pairwise-segment-by condition \
+  --pairwise-time-decay-halflife-days 90
+```
+
 Score pairwise comparison with a single detector:
 
 ```bash
@@ -158,6 +182,7 @@ Checkpoint files allow interrupted runs to resume without repeating completed AP
 Style-suite reports include Wilson score intervals for detector hit rates. Conditions with fewer than 30 outputs are marked `low-n`.
 Style-suite JSON and text reports also include task segments, grouped by prompt `task_type`.
 Pairwise preference compares models on shared style-suite records and ranks lower detector-count outputs higher.
+Pairwise ranking supports `--pairwise-method count|bradley_terry`, segmentation via `--pairwise-segment-by none|task_type|condition`, and optional recency weighting via `--pairwise-time-decay-halflife-days`.
 
 ## Notes For Reliable Comparisons
 
