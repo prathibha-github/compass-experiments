@@ -401,6 +401,235 @@ class PairwisePreferenceTests(unittest.TestCase):
         self.assertEqual(set(suite["models"]), {"left-model", "right-model"})
         self.assertNotIn("disconnected-model", ranked_models)
 
+    def test_analyze_pairwise_preference_supports_bradley_terry(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            strong_path = os.path.join(tmpdir, "strong.jsonl")
+            weak_path = os.path.join(tmpdir, "weak.jsonl")
+            _write_jsonl(
+                strong_path,
+                [
+                    {
+                        "condition": "neutral",
+                        "prompt_id": "p0",
+                        "sample_idx": 0,
+                        "detectors": {"emoji": {"count": 0}},
+                    },
+                    {
+                        "condition": "neutral",
+                        "prompt_id": "p1",
+                        "sample_idx": 0,
+                        "detectors": {"emoji": {"count": 0}},
+                    },
+                    {
+                        "condition": "neutral",
+                        "prompt_id": "p2",
+                        "sample_idx": 0,
+                        "detectors": {"emoji": {"count": 1}},
+                    },
+                ],
+            )
+            _write_jsonl(
+                weak_path,
+                [
+                    {
+                        "condition": "neutral",
+                        "prompt_id": "p0",
+                        "sample_idx": 0,
+                        "detectors": {"emoji": {"count": 2}},
+                    },
+                    {
+                        "condition": "neutral",
+                        "prompt_id": "p1",
+                        "sample_idx": 0,
+                        "detectors": {"emoji": {"count": 1}},
+                    },
+                    {
+                        "condition": "neutral",
+                        "prompt_id": "p2",
+                        "sample_idx": 0,
+                        "detectors": {"emoji": {"count": 1}},
+                    },
+                ],
+            )
+            results = {
+                "strong-model": EvalResults(
+                    model="strong-model",
+                    tic_results={"punctuation_tics": {"checkpoint_path": strong_path}},
+                ),
+                "weak-model": EvalResults(
+                    model="weak-model",
+                    tic_results={"punctuation_tics": {"checkpoint_path": weak_path}},
+                ),
+            }
+            pairwise = analyze_pairwise_preference(results, method="bradley_terry")
+
+        ranking = pairwise["punctuation_tics"]["overall"]["ranking"]
+        self.assertEqual(pairwise["punctuation_tics"]["scoring"]["pairwise_method"], "bradley_terry")
+        self.assertEqual(ranking[0]["model"], "strong-model")
+
+    def test_analyze_pairwise_preference_can_segment_by_condition(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            left_path = os.path.join(tmpdir, "left.jsonl")
+            right_path = os.path.join(tmpdir, "right.jsonl")
+            _write_jsonl(
+                left_path,
+                [
+                    {
+                        "condition": "neutral",
+                        "prompt_id": "p0",
+                        "sample_idx": 0,
+                        "detectors": {"emoji": {"count": 0}},
+                    },
+                    {
+                        "condition": "playful",
+                        "prompt_id": "p0",
+                        "sample_idx": 0,
+                        "detectors": {"emoji": {"count": 2}},
+                    },
+                ],
+            )
+            _write_jsonl(
+                right_path,
+                [
+                    {
+                        "condition": "neutral",
+                        "prompt_id": "p0",
+                        "sample_idx": 0,
+                        "detectors": {"emoji": {"count": 1}},
+                    },
+                    {
+                        "condition": "playful",
+                        "prompt_id": "p0",
+                        "sample_idx": 0,
+                        "detectors": {"emoji": {"count": 0}},
+                    },
+                ],
+            )
+            results = {
+                "left-model": EvalResults(
+                    model="left-model",
+                    tic_results={"punctuation_tics": {"checkpoint_path": left_path}},
+                ),
+                "right-model": EvalResults(
+                    model="right-model",
+                    tic_results={"punctuation_tics": {"checkpoint_path": right_path}},
+                ),
+            }
+            pairwise = analyze_pairwise_preference(results, segment_by="condition")
+
+        segments = pairwise["punctuation_tics"]["segments"]
+        self.assertEqual(pairwise["punctuation_tics"]["scoring"]["segment_by"], "condition")
+        self.assertIn("neutral", segments)
+        self.assertIn("playful", segments)
+        self.assertEqual(pairwise["punctuation_tics"]["task_types"], {})
+
+    def test_analyze_pairwise_preference_time_decay_prefers_recent_records(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            left_path = os.path.join(tmpdir, "left.jsonl")
+            right_path = os.path.join(tmpdir, "right.jsonl")
+            _write_jsonl(
+                left_path,
+                [
+                    {
+                        "condition": "neutral",
+                        "prompt_id": "old",
+                        "sample_idx": 0,
+                        "created_at": "2024-01-01T00:00:00+00:00",
+                        "detectors": {"emoji": {"count": 0}},
+                    },
+                    {
+                        "condition": "neutral",
+                        "prompt_id": "new",
+                        "sample_idx": 0,
+                        "created_at": "2099-01-01T00:00:00+00:00",
+                        "detectors": {"emoji": {"count": 2}},
+                    },
+                ],
+            )
+            _write_jsonl(
+                right_path,
+                [
+                    {
+                        "condition": "neutral",
+                        "prompt_id": "old",
+                        "sample_idx": 0,
+                        "created_at": "2024-01-01T00:00:00+00:00",
+                        "detectors": {"emoji": {"count": 2}},
+                    },
+                    {
+                        "condition": "neutral",
+                        "prompt_id": "new",
+                        "sample_idx": 0,
+                        "created_at": "2099-01-01T00:00:00+00:00",
+                        "detectors": {"emoji": {"count": 0}},
+                    },
+                ],
+            )
+            results = {
+                "left-model": EvalResults(
+                    model="left-model",
+                    tic_results={"punctuation_tics": {"checkpoint_path": left_path}},
+                ),
+                "right-model": EvalResults(
+                    model="right-model",
+                    tic_results={"punctuation_tics": {"checkpoint_path": right_path}},
+                ),
+            }
+            pairwise = analyze_pairwise_preference(
+                results,
+                time_decay_halflife_days=30,
+            )
+
+        suite = pairwise["punctuation_tics"]
+        ranking = suite["overall"]["ranking"]
+        self.assertEqual(ranking[0]["model"], "right-model")
+        self.assertLess(suite["overall"]["pairs"]["left-model::right-model"]["matches"], 2.0)
+
+    def test_analyze_pairwise_preference_defaults_remain_backward_compatible(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            left_path = os.path.join(tmpdir, "left.jsonl")
+            right_path = os.path.join(tmpdir, "right.jsonl")
+            _write_jsonl(
+                left_path,
+                [
+                    {
+                        "condition": "neutral",
+                        "prompt_id": "p0",
+                        "sample_idx": 0,
+                        "task_type": "summary",
+                        "detectors": {"emoji": {"count": 0}},
+                    }
+                ],
+            )
+            _write_jsonl(
+                right_path,
+                [
+                    {
+                        "condition": "neutral",
+                        "prompt_id": "p0",
+                        "sample_idx": 0,
+                        "task_type": "summary",
+                        "detectors": {"emoji": {"count": 1}},
+                    }
+                ],
+            )
+            results = {
+                "left-model": EvalResults(
+                    model="left-model",
+                    tic_results={"punctuation_tics": {"checkpoint_path": left_path}},
+                ),
+                "right-model": EvalResults(
+                    model="right-model",
+                    tic_results={"punctuation_tics": {"checkpoint_path": right_path}},
+                ),
+            }
+            pairwise = analyze_pairwise_preference(results)
+
+        suite = pairwise["punctuation_tics"]
+        self.assertEqual(suite["scoring"]["pairwise_method"], "count")
+        self.assertEqual(suite["scoring"]["segment_by"], "task_type")
+        self.assertIn("summary", suite["task_types"])
+
 
 if __name__ == "__main__":
     unittest.main()

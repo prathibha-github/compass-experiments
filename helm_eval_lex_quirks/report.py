@@ -174,29 +174,46 @@ def _append_pairwise_section(lines: List[str], results_by_model: Dict[str, EvalR
     ]
     for suite_name, suite_results in pairwise.items():
         lines.append(f"  Suite: {suite_name}")
+        scoring = suite_results.get("scoring", {})
+        method = scoring.get("pairwise_method", "count")
+        segment_by = scoring.get("segment_by", "task_type")
+        halflife = scoring.get("time_decay_halflife_days")
+        lines.append(f"    method={method}  segment_by={segment_by}")
+        if halflife:
+            lines.append(f"    time_decay_halflife_days={halflife}")
         for row in suite_results.get("overall", {}).get("ranking", []):
+            score = row.get("preference_score", row.get("bt_score", 0.0))
             lines.append(
                 f"    {row['model']:<30}  "
-                f"score={row['preference_score']:>6.2f}  "
+                f"score={score:>6.3f}  "
                 f"matches={row['matches']:>4}  "
-                f"W/L/T={row['wins']}/{row['losses']}/{row['ties']}"
+                f"W/L/T={row.get('wins', 0)}/{row.get('losses', 0)}/{row.get('ties', 0)}"
             )
-        task_types = suite_results.get("task_types", {})
-        if task_types:
-            lines.append("    Task types:")
-            for task_type, task_results in task_types.items():
+        segments = suite_results.get("segments", {})
+        if not segments:
+            segments = suite_results.get("task_types", {})
+        if segments:
+            label = "Task types" if segment_by == "task_type" else f"Segments ({segment_by})"
+            lines.append(f"    {label}:")
+            for task_type, task_results in segments.items():
                 ranking = task_results.get("ranking", [])
                 if not ranking:
                     continue
                 leader = ranking[0]
+                leader_score = leader.get("preference_score", leader.get("bt_score", 0.0))
                 lines.append(
                     f"      {task_type:<24}  "
                     f"leader={leader['model']:<24}  "
-                    f"score={leader['preference_score']:>6.2f}"
+                    f"score={leader_score:>6.3f}"
                 )
 
 
 def _pairwise_scoring_text(pairwise: Dict[str, dict]) -> str:
+    methods = {
+        suite_results.get("scoring", {}).get("pairwise_method", "count")
+        for suite_results in pairwise.values()
+    }
+    is_bt = methods == {"bradley_terry"}
     detectors = {
         suite_results.get("scoring", {}).get("detector")
         for suite_results in pairwise.values()
@@ -204,7 +221,14 @@ def _pairwise_scoring_text(pairwise: Dict[str, dict]) -> str:
     }
     if len(detectors) == 1:
         detector = next(iter(detectors))
+        if is_bt:
+            return (
+                f"  Bradley-Terry: lower {detector} detector count preferred on "
+                "shared style-suite records"
+            )
         return f"  Lower {detector} detector count wins on shared style-suite records"
+    if is_bt:
+        return "  Bradley-Terry: lower detector-count total preferred on shared style-suite records"
     return "  Lower detector-count total wins on shared style-suite records"
 
 
