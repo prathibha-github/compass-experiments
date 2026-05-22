@@ -398,6 +398,8 @@ STYLE_SUITE_REGISTRY: Dict[str, TicSuite] = {
     "rest_cai_validation": REST_CAI_VALIDATION_SUITE,
 }
 
+DEFAULT_STYLE_SUITE_KEYS = ("lexical", "punctuation", "formatting", "tone")
+
 STYLE_SUITE_NOTES: Dict[str, str] = {
     "formatting_tics": (
         "Structure indicators only; headings, tables, lists, and trailing questions "
@@ -425,7 +427,7 @@ def expand_suite_names(names: List[str]) -> List[str]:
     expanded: List[str] = []
     for name in names:
         if name == "all":
-            expanded.extend(k for k in STYLE_SUITE_REGISTRY if k != "linkedin")
+            expanded.extend(DEFAULT_STYLE_SUITE_KEYS)
         elif name not in STYLE_SUITE_REGISTRY:
             raise ValueError(f"Unknown style suite: {name}")
         else:
