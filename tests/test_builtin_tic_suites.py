@@ -18,6 +18,13 @@ class BuiltinTicSuiteTests(unittest.TestCase):
         self.assertIn("formatting", result)
         self.assertIn("tone", result)
         self.assertNotIn("linkedin", result)
+        self.assertNotIn("rest_hypothesis", result)
+        self.assertNotIn("rest_cai_validation", result)
+
+    def test_expand_suite_names_keeps_rest_suites_explicit(self):
+        result = expand_suite_names(["rest_hypothesis", "rest_cai_validation"])
+
+        self.assertEqual(result, ["rest_hypothesis", "rest_cai_validation"])
 
     def test_expand_suite_names_rejects_unknown_suite(self):
         with self.assertRaisesRegex(ValueError, "Unknown style suite"):
