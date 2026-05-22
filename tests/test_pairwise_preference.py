@@ -124,6 +124,118 @@ class PairwisePreferenceTests(unittest.TestCase):
         self.assertIn("PAIRWISE PREFERENCE", text)
         self.assertIn("left-model", text)
 
+    def test_analyze_pairwise_preference_handles_legacy_scores_and_bad_lines(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            left_path = os.path.join(tmpdir, "left.jsonl")
+            right_path = os.path.join(tmpdir, "right.jsonl")
+            _write_jsonl(
+                left_path,
+                [
+                    {
+                        "condition": "linkedin_style",
+                        "prompt_idx": 0,
+                        "sample_idx": 0,
+                        "emoji_count": 0,
+                        "phrase_hits": 1,
+                    }
+                ],
+            )
+            with open(left_path, "a") as f:
+                f.write("{not valid json}\n\n")
+            _write_jsonl(
+                right_path,
+                [
+                    {
+                        "condition": "linkedin_style",
+                        "prompt_idx": 0,
+                        "sample_idx": 0,
+                        "task_type": "announcement",
+                        "linkedin_score": 3,
+                    }
+                ],
+            )
+
+            results = {
+                "left-model": EvalResults(
+                    model="left-model",
+                    tic_results={"linkedin_style": {"checkpoint_path": left_path}},
+                ),
+                "right-model": EvalResults(
+                    model="right-model",
+                    tic_results={"linkedin_style": {"checkpoint_path": right_path}},
+                ),
+            }
+
+            pairwise = analyze_pairwise_preference(results)
+
+        suite = pairwise["linkedin_style"]
+        ranking = suite["overall"]["ranking"]
+        self.assertEqual(ranking[0]["model"], "left-model")
+        self.assertEqual(ranking[0]["wins"], 1)
+        self.assertIn("announcement", suite["task_types"])
+
+    def test_analyze_pairwise_preference_ignores_single_model_suites(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "solo.jsonl")
+            _write_jsonl(
+                path,
+                [
+                    {
+                        "condition": "neutral",
+                        "prompt_id": "p0",
+                        "sample_idx": 0,
+                        "detectors": {"emoji": {"count": 1}},
+                    }
+                ],
+            )
+            results = {
+                "solo-model": EvalResults(
+                    model="solo-model",
+                    tic_results={"punctuation_tics": {"checkpoint_path": path}},
+                )
+            }
+
+            self.assertEqual(analyze_pairwise_preference(results), {})
+
+    def test_analyze_pairwise_preference_skips_suites_without_shared_records(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            left_path = os.path.join(tmpdir, "left.jsonl")
+            right_path = os.path.join(tmpdir, "right.jsonl")
+            _write_jsonl(
+                left_path,
+                [
+                    {
+                        "condition": "neutral",
+                        "prompt_id": "p0",
+                        "sample_idx": 0,
+                        "detectors": {"emoji": {"count": 0}},
+                    }
+                ],
+            )
+            _write_jsonl(
+                right_path,
+                [
+                    {
+                        "condition": "neutral",
+                        "prompt_id": "p1",
+                        "sample_idx": 0,
+                        "detectors": {"emoji": {"count": 0}},
+                    }
+                ],
+            )
+            results = {
+                "left-model": EvalResults(
+                    model="left-model",
+                    tic_results={"punctuation_tics": {"checkpoint_path": left_path}},
+                ),
+                "right-model": EvalResults(
+                    model="right-model",
+                    tic_results={"punctuation_tics": {"checkpoint_path": right_path}},
+                ),
+            }
+
+            self.assertEqual(analyze_pairwise_preference(results), {})
+
 
 if __name__ == "__main__":
     unittest.main()
