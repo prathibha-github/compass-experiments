@@ -31,13 +31,20 @@ python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite 
 # Compare models on one detector only
 python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite rest_cai_validation --pairwise-detector rest_suggestion --models claude-haiku-4-5-20251001 claude-sonnet-4-6
 
+# Compare models with Bradley-Terry and time decay
+python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite all \
+  --pairwise-preference --pairwise-method bradley_terry --pairwise-segment-by condition \
+  --pairwise-time-decay-halflife-days 90
+
 # Run subjective tone judges
 python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-... --style-only --style-suite llm_judge_tone --judge-model gpt-4o-mini --models claude-haiku-4-5-20251001
 """
 import argparse
+import json
 import logging
 import os
 import sys
+from datetime import datetime
 from typing import Optional, Sequence
 
 logging.basicConfig(
@@ -48,9 +55,65 @@ logging.basicConfig(
 
 from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, model_provider
 from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY, expand_suite_names
+from helm_eval_lex_quirks.metrics.pairwise_preference import analyze_pairwise_preference
 from helm_eval_lex_quirks.metrics.tic_suite import suite_uses_llm_judge
-from helm_eval_lex_quirks.runner import SCENARIO_REGISTRY, EvalRunner
+from helm_eval_lex_quirks.runner import SCENARIO_REGISTRY, EvalResults, EvalRunner
 from helm_eval_lex_quirks import report as rpt
+
+
+def _load_results_for_pairwise(path: str) -> dict:
+    with open(path) as f:
+        data = json.load(f)
+
+    if not isinstance(data, dict):
+        raise ValueError("pairwise input JSON must be a top-level object.")
+
+    results = {}
+    for model_name, payload in data.items():
+        if not isinstance(payload, dict):
+            continue
+        tic_results = payload.get("tic_suites", {})
+        if not tic_results:
+            continue
+        results[model_name] = EvalResults(
+            model=model_name,
+            tic_results=tic_results,
+        )
+    return results
+
+
+def _run_pairwise_from_results(args: argparse.Namespace) -> None:
+    results = _load_results_for_pairwise(args.pairwise_from_results)
+    if len(results) < 2:
+        raise ValueError("Need at least two models with tic suite data in the results JSON.")
+
+    pairwise = analyze_pairwise_preference(
+        results,
+        detector_name=args.pairwise_detector,
+        method=args.pairwise_method,
+        segment_by=args.pairwise_segment_by,
+        time_decay_halflife_days=args.pairwise_time_decay_halflife_days,
+    )
+    if not pairwise:
+        raise ValueError("No pairwise-comparable shared records were found in referenced checkpoints.")
+
+    for result in results.values():
+        result.pairwise_preference_results = pairwise
+
+    os.makedirs(args.output_dir, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    json_path = os.path.join(args.output_dir, f"pairwise_from_results_{ts}.json")
+    txt_path = os.path.join(args.output_dir, f"pairwise_from_results_{ts}.txt")
+    with open(json_path, "w") as f:
+        json.dump(pairwise, f, indent=2)
+    table = rpt.format_table(results)
+    with open(txt_path, "w") as f:
+        f.write(table)
+
+    print()
+    print(table)
+    print(f"\nPairwise JSON : {json_path}")
+    print(f"Pairwise text : {txt_path}")
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
@@ -93,6 +156,32 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                         help="Compare models head-to-head on shared style-suite records")
     parser.add_argument("--pairwise-detector",
                         help="Score pairwise comparisons using one detector count; implies --pairwise-preference")
+    parser.add_argument(
+        "--pairwise-from-results",
+        help="Offline mode: recompute pairwise from an existing results_*.json file",
+    )
+    parser.add_argument(
+        "--pairwise-method",
+        choices=("count", "bradley_terry"),
+        default="count",
+        help="Pairwise ranking method",
+    )
+    parser.add_argument(
+        "--pairwise-segment-by",
+        choices=("none", "task_type", "condition"),
+        default="task_type",
+        help="Segmentation key for pairwise sub-rankings",
+    )
+    parser.add_argument(
+        "--pairwise-time-decay-halflife-days",
+        type=int,
+        default=None,
+        help="Optional half-life for recency weighting in pairwise scoring",
+    )
+    parser.add_argument(
+        "--run-tag",
+        help="Optional tag persisted on checkpoint records for run tracking",
+    )
     parser.add_argument("--judge-model",
                         help="Model used for suites with LLM judge detectors")
     parser.add_argument("--seed",             type=int,   default=42)
@@ -128,6 +217,16 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     if uses_llm_judge and not args.judge_model:
         print("ERROR: selected style suites with LLM judges require --judge-model.", file=sys.stderr)
         sys.exit(1)
+    if args.pairwise_time_decay_halflife_days is not None and args.pairwise_time_decay_halflife_days <= 0:
+        print("ERROR: --pairwise-time-decay-halflife-days must be > 0.", file=sys.stderr)
+        sys.exit(1)
+    if args.pairwise_from_results:
+        try:
+            _run_pairwise_from_results(args)
+        except Exception as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
+        return
     model_names = list(args.models)
     if args.judge_model:
         model_names.append(args.judge_model)
@@ -157,6 +256,10 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         run_persona_transfer=args.persona_transfer,
         run_pairwise_preference=args.pairwise_preference or bool(args.pairwise_detector),
         pairwise_detector=args.pairwise_detector,
+        pairwise_method=args.pairwise_method,
+        pairwise_segment_by=args.pairwise_segment_by,
+        pairwise_time_decay_halflife_days=args.pairwise_time_decay_halflife_days,
+        run_tag=args.run_tag,
         judge_model=args.judge_model,
         seed=args.seed,
         dry_run=args.dry_run,
@@ -183,7 +286,14 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             pairwise_label = "pairwise-preference"
             if cfg.pairwise_detector:
                 pairwise_label += f"={cfg.pairwise_detector}"
+            pairwise_label += (
+                f",method={cfg.pairwise_method},segment={cfg.pairwise_segment_by}"
+            )
+            if cfg.pairwise_time_decay_halflife_days:
+                pairwise_label += f",halflife_days={cfg.pairwise_time_decay_halflife_days}"
             extras.append(pairwise_label)
+        if cfg.run_tag:
+            extras.append(f"run-tag={cfg.run_tag}")
         if cfg.judge_model:
             extras.append(f"judge-model={cfg.judge_model}")
         extra_str = f"  [{', '.join(extras)}]" if extras else ""
