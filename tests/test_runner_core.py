@@ -5,6 +5,7 @@ Covers unit-level branching for cost estimation, scenario loading/error paths,
 aggregation behavior, and judge disagreement helpers.
 """
 
+import json
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -327,6 +328,61 @@ class RunnerCoreTests(unittest.TestCase):
                     checkpoint_path=ckpt_path,
                 )
         self.assertEqual(sr.n_completed, 1)
+
+    def test_run_tic_suite_style_samples_increment_appends_new_records(self):
+        class SubjectClient:
+            total_tokens = {"input": 0, "output": 0}
+            total_cost_usd = 0.0
+
+            def __init__(self):
+                self.calls = 0
+
+            def complete(self, prompt, max_tokens=1, logprobs=False, system=None):
+                self.calls += 1
+                class Resp:
+                    completion = "plain completion"
+                    logprobs = None
+                return Resp()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg = self._config(
+                output_dir=tmpdir,
+                style_samples_increment=True,
+                style_only=True,
+                style_suites=[],
+            )
+            runner = EvalRunner(cfg)
+            client = SubjectClient()
+            suite = self._suite()
+
+            first = runner._run_tic_suite(
+                client=client,
+                model_name="subject-model",
+                suite=suite,
+                samples=1,
+                progress_label="unit-suite",
+            )
+            second = runner._run_tic_suite(
+                client=client,
+                model_name="subject-model",
+                suite=suite,
+                samples=1,
+                progress_label="unit-suite",
+            )
+
+            self.assertEqual(client.calls, 4)
+            self.assertEqual(first["analysis"]["neutral"]["n_outputs"], 2)
+            self.assertEqual(second["analysis"]["neutral"]["n_outputs"], 4)
+
+            with open(second["checkpoint_path"]) as f:
+                records = [json.loads(line) for line in f if line.strip()]
+
+        self.assertEqual(len(records), 4)
+        by_prompt = {}
+        for rec in records:
+            by_prompt.setdefault(rec["prompt_idx"], set()).add(rec["sample_idx"])
+        self.assertEqual(by_prompt[0], {0, 1})
+        self.assertEqual(by_prompt[1], {0, 1})
 
 
 if __name__ == "__main__":
