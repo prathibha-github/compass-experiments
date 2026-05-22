@@ -6,6 +6,7 @@ aggregation behavior, and judge disagreement helpers.
 """
 
 import json
+import os
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -383,6 +384,113 @@ class RunnerCoreTests(unittest.TestCase):
             by_prompt.setdefault(rec["prompt_idx"], set()).add(rec["sample_idx"])
         self.assertEqual(by_prompt[0], {0, 1})
         self.assertEqual(by_prompt[1], {0, 1})
+
+    def test_run_tic_suite_style_samples_increment_gap_does_not_backfill(self):
+        class SubjectClient:
+            total_tokens = {"input": 0, "output": 0}
+            total_cost_usd = 0.0
+
+            def __init__(self):
+                self.calls = 0
+
+            def complete(self, prompt, max_tokens=1, logprobs=False, system=None):
+                self.calls += 1
+
+                class Resp:
+                    completion = "new completion"
+                    logprobs = None
+
+                return Resp()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg = self._config(
+                output_dir=tmpdir,
+                style_samples_increment=True,
+                style_only=True,
+                style_suites=[],
+            )
+            runner = EvalRunner(cfg)
+            suite = self._suite()
+            client = SubjectClient()
+
+            ckpt_dir = os.path.join(tmpdir, "checkpoints")
+            os.makedirs(ckpt_dir, exist_ok=True)
+            ckpt_path = os.path.join(ckpt_dir, "subject-model__unit_suite.jsonl")
+            seeded_records = [
+                {
+                    "schema_version": 1,
+                    "model": "subject-model",
+                    "suite": "unit_suite",
+                    "condition": "neutral",
+                    "prompt_id": "p0",
+                    "task_type": "general",
+                    "prompt_idx": 0,
+                    "sample_idx": 0,
+                    "prompt": "Write a short note.",
+                    "completion": "old p0 s0",
+                    "detectors": {},
+                },
+                {
+                    "schema_version": 1,
+                    "model": "subject-model",
+                    "suite": "unit_suite",
+                    "condition": "neutral",
+                    "prompt_id": "p0",
+                    "task_type": "general",
+                    "prompt_idx": 0,
+                    "sample_idx": 2,
+                    "prompt": "Write a short note.",
+                    "completion": "old p0 s2",
+                    "detectors": {},
+                },
+                {
+                    "schema_version": 1,
+                    "model": "subject-model",
+                    "suite": "unit_suite",
+                    "condition": "neutral",
+                    "prompt_id": "p1",
+                    "task_type": "update",
+                    "prompt_idx": 1,
+                    "sample_idx": 0,
+                    "prompt": "Write an update.",
+                    "completion": "old p1 s0",
+                    "detectors": {},
+                },
+                {
+                    "schema_version": 1,
+                    "model": "subject-model",
+                    "suite": "unit_suite",
+                    "condition": "neutral",
+                    "prompt_id": "p1",
+                    "task_type": "update",
+                    "prompt_idx": 1,
+                    "sample_idx": 2,
+                    "prompt": "Write an update.",
+                    "completion": "old p1 s2",
+                    "detectors": {},
+                },
+            ]
+            with open(ckpt_path, "w") as f:
+                for rec in seeded_records:
+                    f.write(json.dumps(rec) + "\n")
+
+            result = runner._run_tic_suite(
+                client=client,
+                model_name="subject-model",
+                suite=suite,
+                samples=1,
+                progress_label="unit-suite",
+            )
+
+            self.assertEqual(client.calls, 2)
+            with open(result["checkpoint_path"]) as f:
+                records = [json.loads(line) for line in f if line.strip()]
+
+        by_prompt = {}
+        for rec in records:
+            by_prompt.setdefault(rec["prompt_idx"], set()).add(rec["sample_idx"])
+        self.assertEqual(by_prompt[0], {0, 2, 3})
+        self.assertEqual(by_prompt[1], {0, 2, 3})
 
 
 if __name__ == "__main__":

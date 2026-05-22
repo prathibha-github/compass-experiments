@@ -511,6 +511,8 @@ class EvalRunner:
         existing_sample_indices: DefaultDict[Tuple[str, int], List[int]] = defaultdict(list)
         if self.config.style_samples_increment:
             for condition_name, prompt_idx, sample_idx in done.keys():
+                # Defensive guard: checkpoints are expected to store numeric sample_idx,
+                # but old or hand-edited files might not.
                 if isinstance(sample_idx, int):
                     existing_sample_indices[(condition_name, prompt_idx)].append(sample_idx)
             logger.info(
@@ -527,6 +529,8 @@ class EvalRunner:
                     if self.config.style_samples_increment:
                         slot = (condition.name, prompt_idx)
                         existing = existing_sample_indices.get(slot, [])
+                        # Append semantics intentionally use max(existing)+1 rather than
+                        # filling any gaps from interrupted runs.
                         start_idx = (max(existing) + 1) if existing else 0
                         sample_indices = range(start_idx, start_idx + samples)
                     else:
