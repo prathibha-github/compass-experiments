@@ -119,7 +119,10 @@ class EvalRunner:
             client = create_client(self.config, model_name)
             out[model_name] = self._run_model(client, model_name)
         if self.config.run_pairwise_preference:
-            pairwise = analyze_pairwise_preference(out)
+            pairwise = analyze_pairwise_preference(
+                out,
+                detector_name=self.config.pairwise_detector,
+            )
             for result in out.values():
                 result.pairwise_preference_results = pairwise
         return out
