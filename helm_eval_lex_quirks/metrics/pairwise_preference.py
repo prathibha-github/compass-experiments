@@ -18,8 +18,16 @@ def _record_task_type(record: dict) -> Optional[str]:
     return record.get("task_type")
 
 
-def _record_score(record: dict) -> float:
+def _record_score(record: dict, detector_name: Optional[str] = None) -> Optional[float]:
     detectors = record.get("detectors", {})
+    if detector_name:
+        if not isinstance(detectors, dict):
+            return None
+        detector = detectors.get(detector_name)
+        if not isinstance(detector, dict) or "count" not in detector:
+            return None
+        return float(detector.get("count", 0.0))
+
     if isinstance(detectors, dict) and detectors:
         first = next(iter(detectors.values()))
         if isinstance(first, dict) and "count" in first:
@@ -94,6 +102,8 @@ def _win_summary(left_wins: int, right_wins: int, ties: int) -> dict:
 def _rank_bucket(bucket: Dict[str, dict]) -> List[dict]:
     ranking = []
     for model, stats in bucket.items():
+        if stats["matches"] <= 0:
+            continue
         ranking.append(
             {
                 "model": model,
@@ -108,12 +118,16 @@ def _rank_bucket(bucket: Dict[str, dict]) -> List[dict]:
     return ranking
 
 
-def analyze_pairwise_preference(results_by_model: Dict[str, Any]) -> Dict[str, dict]:
+def analyze_pairwise_preference(
+    results_by_model: Dict[str, Any],
+    detector_name: Optional[str] = None,
+) -> Dict[str, dict]:
     """
     Compare models head-to-head on shared tic-suite checkpoint records.
 
-    Lower detector score wins. The score is the sum of detector counts for the
-    record, with suite-specific fallbacks for older LinkedIn checkpoints.
+    Lower detector score wins. By default, the score is the sum of detector
+    counts for the record, with suite-specific fallbacks for older LinkedIn
+    checkpoints. If detector_name is set, only that detector count is used.
     """
     suite_names = set()
     for result in results_by_model.values():
@@ -149,8 +163,10 @@ def analyze_pairwise_preference(results_by_model: Dict[str, Any]) -> Dict[str, d
                 left_record = left_records[key]
                 right_record = right_records[key]
                 task_type = _record_task_type(left_record) or _record_task_type(right_record) or "general"
-                left_score = _record_score(left_record)
-                right_score = _record_score(right_record)
+                left_score = _record_score(left_record, detector_name)
+                right_score = _record_score(right_record, detector_name)
+                if left_score is None or right_score is None:
+                    continue
 
                 if left_score < right_score:
                     left_wins += 1
@@ -162,19 +178,23 @@ def analyze_pairwise_preference(results_by_model: Dict[str, Any]) -> Dict[str, d
                     ties += 1
                     per_task[task_type][2] += 1
 
+            matches = left_wins + right_wins + ties
+            if not matches:
+                continue
+
             pair_key = f"{left_model}::{right_model}"
             pairwise_pairs[pair_key] = _win_summary(left_wins, right_wins, ties)
 
             overall_bucket[left_model]["wins"] += left_wins
             overall_bucket[left_model]["losses"] += right_wins
             overall_bucket[left_model]["ties"] += ties
-            overall_bucket[left_model]["matches"] += left_wins + right_wins + ties
+            overall_bucket[left_model]["matches"] += matches
             overall_bucket[left_model]["score"] += left_wins + 0.5 * ties
 
             overall_bucket[right_model]["wins"] += right_wins
             overall_bucket[right_model]["losses"] += left_wins
             overall_bucket[right_model]["ties"] += ties
-            overall_bucket[right_model]["matches"] += left_wins + right_wins + ties
+            overall_bucket[right_model]["matches"] += matches
             overall_bucket[right_model]["score"] += right_wins + 0.5 * ties
 
             for task_type, counts in per_task.items():
@@ -198,8 +218,16 @@ def analyze_pairwise_preference(results_by_model: Dict[str, Any]) -> Dict[str, d
         if not pairwise_pairs:
             continue
 
+        active_models = [
+            model for model in participating_models
+            if overall_bucket[model]["matches"] > 0
+        ]
         pairwise_results[suite_name] = {
-            "models": participating_models,
+            "models": active_models,
+            "scoring": {
+                "mode": "single_detector" if detector_name else "sum_detector_counts",
+                "detector": detector_name,
+            },
             "overall": {
                 "pairs": pairwise_pairs,
                 "ranking": _rank_bucket(overall_bucket),

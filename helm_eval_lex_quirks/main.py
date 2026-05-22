@@ -27,6 +27,9 @@ python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite 
 
 # Compare models head-to-head on style-suite checkpoints
 python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite all --pairwise-preference --models gpt-4o-mini gpt-4.1-nano
+
+# Compare models on one detector only
+python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite rest_cai_validation --pairwise-detector rest_suggestion --models claude-haiku-4-5-20251001 claude-sonnet-4-6
 """
 import argparse
 import logging
@@ -84,6 +87,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                         help="Compare persona/style conditions against each style suite baseline")
     parser.add_argument("--pairwise-preference", action="store_true",
                         help="Compare models head-to-head on shared style-suite records")
+    parser.add_argument("--pairwise-detector",
+                        help="Score pairwise comparisons using one detector count; implies --pairwise-preference")
     parser.add_argument("--seed",             type=int,   default=42)
     parser.add_argument("--request-interval", type=float, default=2.0,
                         help="Seconds between API calls. Raise to 4-6 for free-tier accounts.")
@@ -102,7 +107,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
-    if (args.persona_transfer or args.pairwise_preference) and not style_suites and not args.linkedin_style:
+    if (args.persona_transfer or args.pairwise_preference or args.pairwise_detector) and not style_suites and not args.linkedin_style:
         style_suites = expand_suite_names(["all"])
     if args.style_only:
         args.no_robustness = True
@@ -134,7 +139,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         style_only=args.style_only,
         style_samples=args.style_samples,
         run_persona_transfer=args.persona_transfer,
-        run_pairwise_preference=args.pairwise_preference,
+        run_pairwise_preference=args.pairwise_preference or bool(args.pairwise_detector),
+        pairwise_detector=args.pairwise_detector,
         seed=args.seed,
         dry_run=args.dry_run,
         request_interval=args.request_interval,
@@ -157,7 +163,10 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         if cfg.run_persona_transfer:
             extras.append("persona-transfer")
         if cfg.run_pairwise_preference:
-            extras.append("pairwise-preference")
+            pairwise_label = "pairwise-preference"
+            if cfg.pairwise_detector:
+                pairwise_label += f"={cfg.pairwise_detector}"
+            extras.append(pairwise_label)
         extra_str = f"  [{', '.join(extras)}]" if extras else ""
         print(f"  {model:<20}  ~${cost:.4f}{extra_str}")
 
