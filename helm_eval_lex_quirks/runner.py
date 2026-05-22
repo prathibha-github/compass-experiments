@@ -508,13 +508,31 @@ class EvalRunner:
                     task_detector_records[task_type][condition].append(detectors)
             judge_disagreement_rows.extend(self._extract_judge_disagreements(rec))
 
+        existing_sample_indices: DefaultDict[Tuple[str, int], List[int]] = defaultdict(list)
+        if self.config.style_samples_increment:
+            for condition_name, prompt_idx, sample_idx in done.keys():
+                if isinstance(sample_idx, int):
+                    existing_sample_indices[(condition_name, prompt_idx)].append(sample_idx)
+            logger.info(
+                "    Incremental style sampling enabled: appending %d samples per prompt/condition",
+                samples,
+            )
+
         total_calls = len(suite.prompts) * len(suite.conditions) * samples
         pbar = tqdm(total=total_calls, desc=progress_label or suite.name, leave=False)
 
         with open(ckpt_path, "a") as ckpt_f:
             for condition in suite.conditions:
                 for prompt_idx, prompt in enumerate(suite.prompts):
-                    for sample_idx in range(samples):
+                    if self.config.style_samples_increment:
+                        slot = (condition.name, prompt_idx)
+                        existing = existing_sample_indices.get(slot, [])
+                        start_idx = (max(existing) + 1) if existing else 0
+                        sample_indices = range(start_idx, start_idx + samples)
+                    else:
+                        sample_indices = range(samples)
+
+                    for sample_idx in sample_indices:
                         pbar.update(1)
                         key = (condition.name, prompt_idx, sample_idx)
                         if key in done:
