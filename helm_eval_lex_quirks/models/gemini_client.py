@@ -82,12 +82,6 @@ class GeminiClient:
                 f"Model {self.model!r} has reached its maximum request limit of {self.config.max_requests}"
             )
 
-        if system != "You are a helpful assistant.":
-            logger.warning(
-                "Gemini client uses a fixed default system instruction. "
-                "Per-call system prompts are not supported and will be ignored."
-            )
-
         if logprobs:
             logger.debug("Gemini API does not support token logprobs; returning None.")
 
@@ -145,10 +139,6 @@ class GeminiClient:
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                 )
-
-            except self._genai.types.BlockedPromptException as exc:
-                logger.error("Gemini API blocked prompt: %s", exc)
-                raise
 
             except Exception as exc:
                 error_name = type(exc).__name__
