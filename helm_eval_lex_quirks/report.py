@@ -3,6 +3,8 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
+import yaml
+
 from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_NOTES
 from helm_eval_lex_quirks.runner import EvalResults
 
@@ -464,3 +466,247 @@ def save(results_by_model: Dict[str, EvalResults], output_dir: str) -> Tuple[str
         f.write(format_table(results_by_model))
 
     return json_path, txt_path
+
+
+def _load_thresholds(path: str) -> Dict[str, Any]:
+    if not path or not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        raw = yaml.safe_load(f) or {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _iter_detector_rows(results_by_model: Dict[str, EvalResults]) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for model, res in results_by_model.items():
+        for suite_name, suite_results in res.tic_results.items():
+            analysis = suite_results.get("analysis", {})
+            for condition, stats in analysis.items():
+                for detector, det_stats in stats.get("detectors", {}).items():
+                    rows.append(
+                        {
+                            "model": model,
+                            "suite": suite_name,
+                            "segment": "condition",
+                            "task_type": None,
+                            "condition": condition,
+                            "detector": detector,
+                            "n_outputs": int(stats.get("n_outputs", 0)),
+                            "low_sample": bool(stats.get("low_sample") or det_stats.get("low_sample")),
+                            "pct_hit": float(det_stats.get("pct_hit", 0.0)),
+                            "mean_count": float(det_stats.get("mean_count", 0.0)),
+                            "ci_low": det_stats.get("pct_hit_ci_low"),
+                            "ci_high": det_stats.get("pct_hit_ci_high"),
+                        }
+                    )
+            task_segments = suite_results.get("task_segments", {})
+            for task_type, task_analysis in task_segments.items():
+                for condition, stats in task_analysis.items():
+                    for detector, det_stats in stats.get("detectors", {}).items():
+                        rows.append(
+                            {
+                                "model": model,
+                                "suite": suite_name,
+                                "segment": "task",
+                                "task_type": task_type,
+                                "condition": condition,
+                                "detector": detector,
+                                "n_outputs": int(stats.get("n_outputs", 0)),
+                                "low_sample": bool(stats.get("low_sample") or det_stats.get("low_sample")),
+                                "pct_hit": float(det_stats.get("pct_hit", 0.0)),
+                                "mean_count": float(det_stats.get("mean_count", 0.0)),
+                                "ci_low": det_stats.get("pct_hit_ci_low"),
+                                "ci_high": det_stats.get("pct_hit_ci_high"),
+                            }
+                        )
+    return rows
+
+
+def _threshold_rule(thresholds: Dict[str, Any], row: Dict[str, Any]) -> Dict[str, Any]:
+    suites = thresholds.get("suites", {})
+    suite_cfg = suites.get(row["suite"], {}) if isinstance(suites, dict) else {}
+    detectors_cfg = suite_cfg.get("detectors", {}) if isinstance(suite_cfg, dict) else {}
+    rule = detectors_cfg.get(row["detector"], {}) if isinstance(detectors_cfg, dict) else {}
+    return rule if isinstance(rule, dict) else {}
+
+
+def _find_threshold_crossings(
+    rows: List[Dict[str, Any]],
+    thresholds: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    crossings: List[Dict[str, Any]] = []
+    for row in rows:
+        rule = _threshold_rule(thresholds, row)
+        if not rule:
+            continue
+        max_pct_hit = rule.get("max_pct_hit")
+        max_mean_count = rule.get("max_mean_count")
+        if isinstance(max_pct_hit, (int, float)) and row["pct_hit"] > float(max_pct_hit):
+            crossings.append(
+                {
+                    **row,
+                    "metric": "pct_hit",
+                    "threshold": float(max_pct_hit),
+                    "value": row["pct_hit"],
+                    "exceed_by": row["pct_hit"] - float(max_pct_hit),
+                }
+            )
+        if isinstance(max_mean_count, (int, float)) and row["mean_count"] > float(max_mean_count):
+            crossings.append(
+                {
+                    **row,
+                    "metric": "mean_count",
+                    "threshold": float(max_mean_count),
+                    "value": row["mean_count"],
+                    "exceed_by": row["mean_count"] - float(max_mean_count),
+                }
+            )
+    return crossings
+
+
+def _ci_width(row: Dict[str, Any]) -> float:
+    low = row.get("ci_low")
+    high = row.get("ci_high")
+    if isinstance(low, (int, float)) and isinstance(high, (int, float)):
+        return max(float(high) - float(low), 0.0)
+    return 0.0
+
+
+def _deep_dive_rows(
+    rows: List[Dict[str, Any]],
+    crossings: List[Dict[str, Any]],
+    top_k: int,
+) -> List[Dict[str, Any]]:
+    if top_k <= 0:
+        return []
+    crossing_index = {
+        (
+            row["model"],
+            row["suite"],
+            row["segment"],
+            row.get("task_type"),
+            row["condition"],
+            row["detector"],
+        ): row
+        for row in crossings
+    }
+    scored: List[Tuple[float, Dict[str, Any]]] = []
+    for row in rows:
+        key = (
+            row["model"],
+            row["suite"],
+            row["segment"],
+            row.get("task_type"),
+            row["condition"],
+            row["detector"],
+        )
+        crossing = crossing_index.get(key)
+        severity = float(crossing["exceed_by"]) if crossing else 0.0
+        uncertainty = (1.0 if row.get("low_sample") else 0.0) + _ci_width(row) / 100.0
+        score = severity + uncertainty
+        if score <= 0:
+            continue
+        scored.append((score, {**row, "priority_score": round(score, 4), "crossing": crossing}))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [row for _score, row in scored[:top_k]]
+
+
+def _safety_recommendations(
+    crossings: List[Dict[str, Any]],
+    uncertain_rows: List[Dict[str, Any]],
+) -> List[str]:
+    recs: List[str] = []
+    if crossings:
+        recs.append(
+            f"Threshold crossings detected in {len(crossings)} detector slices; audit top exceedances before promotion."
+        )
+    else:
+        recs.append("No configured threshold crossings detected in this run.")
+    if uncertain_rows:
+        recs.append(
+            f"{len(uncertain_rows)} uncertain slices flagged (low sample or wide CI); increase sample counts and rerun."
+        )
+    else:
+        recs.append("No uncertainty flags triggered under current low-n/CI heuristics.")
+    recs.append("Re-run across multiple dates and model versions before drawing deployment conclusions.")
+    return recs
+
+
+def save_safety_case(
+    results_by_model: Dict[str, EvalResults],
+    output_dir: str,
+    thresholds_path: str = "configs/thresholds.yaml",
+    deep_dive_top_k: int = 0,
+) -> str:
+    if not any(res.tic_results for res in results_by_model.values()):
+        return ""
+
+    os.makedirs(output_dir, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_path = os.path.join(output_dir, f"safety_case_{ts}.md")
+
+    thresholds = _load_thresholds(thresholds_path)
+    rows = _iter_detector_rows(results_by_model)
+    crossings = _find_threshold_crossings(rows, thresholds)
+    uncertain_rows = [row for row in rows if row.get("low_sample") or _ci_width(row) >= 40.0]
+    deep_dive = _deep_dive_rows(rows, crossings, deep_dive_top_k)
+    recommendations = _safety_recommendations(crossings, uncertain_rows)
+
+    models = ", ".join(results_by_model.keys())
+    suites = sorted(
+        {
+            suite_name
+            for res in results_by_model.values()
+            for suite_name in res.tic_results.keys()
+        }
+    )
+
+    lines = [
+        "# Safety Case Report",
+        "",
+        f"- Generated: {datetime.now():%Y-%m-%d %H:%M:%S}",
+        f"- Models: {models}",
+        f"- Tic suites: {', '.join(suites)}",
+        f"- Threshold config: {thresholds_path if thresholds else 'not found/empty'}",
+        "",
+        "## Threshold Crossings",
+    ]
+    if crossings:
+        lines.append("| Model | Suite | Segment | Condition | Detector | Metric | Value | Threshold | Exceed By |")
+        lines.append("|---|---|---|---|---|---:|---:|---:|---:|")
+        for row in sorted(crossings, key=lambda r: r["exceed_by"], reverse=True)[:50]:
+            segment = row["segment"] if row["segment"] == "condition" else f"task:{row.get('task_type')}"
+            lines.append(
+                f"| {row['model']} | {row['suite']} | {segment} | {row['condition']} | "
+                f"{row['detector']} | {row['metric']} | {row['value']:.2f} | "
+                f"{row['threshold']:.2f} | {row['exceed_by']:.2f} |"
+            )
+    else:
+        lines.append("No threshold crossings detected.")
+
+    lines += ["", "## Uncertainty Flags", ""]
+    lines.append(f"- Flagged slices: {len(uncertain_rows)}")
+    lines.append("- Rule: low-n marker OR hit-rate CI width >= 40 percentage points.")
+
+    if deep_dive_top_k > 0:
+        lines += ["", f"## Deep Dive Candidates (Top {deep_dive_top_k})", ""]
+        if deep_dive:
+            lines.append("| Priority | Model | Suite | Segment | Condition | Detector | hit% | mean | low-n |")
+            lines.append("|---:|---|---|---|---|---|---:|---:|---|")
+            for row in deep_dive:
+                segment = row["segment"] if row["segment"] == "condition" else f"task:{row.get('task_type')}"
+                lines.append(
+                    f"| {row['priority_score']:.3f} | {row['model']} | {row['suite']} | "
+                    f"{segment} | {row['condition']} | {row['detector']} | "
+                    f"{row['pct_hit']:.1f} | {row['mean_count']:.2f} | {row['low_sample']} |"
+                )
+        else:
+            lines.append("No deep-dive candidates under current heuristics.")
+
+    lines += ["", "## Recommendations", ""]
+    for rec in recommendations:
+        lines.append(f"- {rec}")
+
+    with open(out_path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    return out_path

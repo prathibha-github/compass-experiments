@@ -81,6 +81,8 @@ class EvalConfig:
     judge_model: Optional[str]   = None
     judge_model_secondary: Optional[str] = None
     judge_disagreement_threshold: float = 0.4
+    safety_thresholds_path: Optional[str] = "configs/thresholds.yaml"
+    deep_dive_top_k: int         = 0
     seed: int                    = 42
     dry_run: bool                = False
     request_interval: float      = 2.0   # seconds between API calls; increase for free-tier accounts
