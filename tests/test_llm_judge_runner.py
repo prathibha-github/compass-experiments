@@ -99,6 +99,74 @@ class LLMJudgeRunnerTests(unittest.TestCase):
                     samples=1,
                 )
 
+    def test_run_tic_suite_with_secondary_judge_reports_agreement(self):
+        class SubjectClient:
+            total_tokens = {"input": 0, "output": 0}
+            total_cost_usd = 0.0
+
+            def complete(self, prompt, max_tokens=1, logprobs=False, system=None):
+                return ModelResponse(completion="You are absolutely right.", logprobs=None)
+
+        class PrimaryJudgeClient:
+            @property
+            def total_tokens(self):
+                return {"input": 10, "output": 4}
+
+            @property
+            def total_cost_usd(self):
+                return 0.001
+
+            def complete(self, prompt, max_tokens=1, logprobs=False, system=None):
+                return ModelResponse(
+                    completion='{"score": 1.0, "hit": true, "confidence": 0.9, "rationale": "agree"}',
+                    logprobs=None,
+                )
+
+        class SecondaryJudgeClient:
+            @property
+            def total_tokens(self):
+                return {"input": 9, "output": 3}
+
+            @property
+            def total_cost_usd(self):
+                return 0.0009
+
+            def complete(self, prompt, max_tokens=1, logprobs=False, system=None):
+                return ModelResponse(
+                    completion='{"score": 0.1, "hit": false, "confidence": 0.8, "rationale": "disagree"}',
+                    logprobs=None,
+                )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg = EvalConfig(
+                api_key="dummy",
+                output_dir=tmpdir,
+                scenarios=[],
+                style_only=True,
+                style_suites=[],
+                judge_model="judge-primary",
+                judge_model_secondary="judge-secondary",
+                judge_disagreement_threshold=0.4,
+            )
+            with patch(
+                "helm_eval_lex_quirks.runner.create_client",
+                side_effect=[PrimaryJudgeClient(), SecondaryJudgeClient()],
+            ):
+                result = EvalRunner(cfg)._run_tic_suite(
+                    client=SubjectClient(),
+                    model_name="subject-model",
+                    suite=self._suite(),
+                    samples=1,
+                )
+
+        detector = result["analysis"]["neutral"]["detectors"]["sycophancy"]
+        self.assertEqual(detector["hit_count"], 1)
+        self.assertEqual(result["judge_secondary"]["model"], "judge-secondary")
+        agreement = result["judge_agreement"]["overall"]
+        self.assertEqual(agreement["n"], 1)
+        self.assertEqual(agreement["agreement_pct"], 0.0)
+        self.assertEqual(agreement["high_disagreement_pct"], 100.0)
+
 
 class LLMJudgeDetectorParsingTests(unittest.TestCase):
     def _detector(self):

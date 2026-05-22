@@ -1,9 +1,10 @@
 import json
 import logging
 import os
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
@@ -133,6 +134,12 @@ class EvalRunner:
                         ["x" * 1200] * judge_calls,
                         max_tokens=max_judge_tokens,
                     )
+                    if self.config.judge_model_secondary:
+                        total += estimate_model_cost(
+                            self.config.judge_model_secondary,
+                            ["x" * 1200] * judge_calls,
+                            max_tokens=max_judge_tokens,
+                        )
             estimates[model_name] = round(total, 4)
         return estimates
 
@@ -443,6 +450,7 @@ class EvalRunner:
             prompt.task_type: {c.name: [] for c in suite.conditions}
             for prompt in suite.prompts
         }
+        judge_disagreement_rows: List[Dict[str, Any]] = []
         safe_model = model_name.replace("/", "_").replace(":", "_")
         ckpt_path = os.path.join(
             self.config.output_dir,
@@ -452,7 +460,9 @@ class EvalRunner:
         os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
 
         judge_client: Optional[CompletionClient] = None
+        judge_client_secondary: Optional[CompletionClient] = None
         judge_fn = None
+        judge_fn_secondary = None
         if suite_uses_llm_judge(suite):
             if not self.config.judge_model:
                 raise ValueError(f"Suite {suite.name!r} requires --judge-model.")
@@ -466,6 +476,21 @@ class EvalRunner:
                     system=LLM_JUDGE_SYSTEM_PROMPT,
                 )
                 return resp.completion
+
+            if self.config.judge_model_secondary:
+                judge_client_secondary = create_client(
+                    self.config,
+                    self.config.judge_model_secondary,
+                )
+
+                def judge_fn_secondary(prompt: str, max_tokens: int) -> str:
+                    resp = judge_client_secondary.complete(
+                        prompt,
+                        max_tokens=max_tokens,
+                        logprobs=False,
+                        system=LLM_JUDGE_SYSTEM_PROMPT,
+                    )
+                    return resp.completion
 
         done, resumed_outputs = self._load_tic_checkpoint(ckpt_path, suite)
         for condition, outputs in resumed_outputs.items():
@@ -481,6 +506,7 @@ class EvalRunner:
                 condition_detector_records[condition].append(detectors)
                 if task_type in task_detector_records:
                     task_detector_records[task_type][condition].append(detectors)
+            judge_disagreement_rows.extend(self._extract_judge_disagreements(rec))
 
         total_calls = len(suite.prompts) * len(suite.conditions) * samples
         pbar = tqdm(total=total_calls, desc=progress_label or suite.name, leave=False)
@@ -509,6 +535,17 @@ class EvalRunner:
                                 suite,
                                 judge_fn=judge_fn,
                             )
+                            secondary_results = None
+                            if judge_fn_secondary is not None:
+                                secondary_results = analyze_text(
+                                    completion,
+                                    suite,
+                                    judge_fn=judge_fn_secondary,
+                                )
+                                self._annotate_secondary_judge_metadata(
+                                    detector_results=detector_results,
+                                    secondary_results=secondary_results,
+                                )
                             detector_record = {
                                 name: result.to_dict()
                                 for name, result in detector_results.items()
@@ -535,6 +572,9 @@ class EvalRunner:
                             record.update(suite.extra_record_fields(completion, detector_results))
                             ckpt_f.write(json.dumps(record) + "\n")
                             ckpt_f.flush()
+                            judge_disagreement_rows.extend(
+                                self._extract_judge_disagreements(record)
+                            )
                         except Exception as exc:
                             logger.error(
                                 "  %s prompt failed (%s/%s): %s",
@@ -579,7 +619,134 @@ class EvalRunner:
                 "token_usage": judge_client.total_tokens,
                 "cost_usd": round(judge_client.total_cost_usd, 6),
             }
+        if judge_client_secondary and self.config.judge_model_secondary:
+            result["judge_secondary"] = {
+                "model": self.config.judge_model_secondary,
+                "token_usage": judge_client_secondary.total_tokens,
+                "cost_usd": round(judge_client_secondary.total_cost_usd, 6),
+            }
+            result["judge_agreement"] = self._summarize_judge_disagreements(
+                judge_disagreement_rows,
+                threshold=self.config.judge_disagreement_threshold,
+            )
         return result
+
+    @staticmethod
+    def _annotate_secondary_judge_metadata(
+        detector_results: Dict[str, Any],
+        secondary_results: Dict[str, Any],
+    ) -> None:
+        for detector_name, primary in detector_results.items():
+            secondary = secondary_results.get(detector_name)
+            if secondary is None:
+                continue
+            if "confidence" not in primary.metadata:
+                continue
+
+            delta = abs(primary.score - secondary.score)
+            primary.metadata.update(
+                {
+                    "secondary_score": round(secondary.score, 4),
+                    "secondary_hit": bool(secondary.hit),
+                    "secondary_confidence": secondary.metadata.get("confidence"),
+                    "secondary_rationale": str(secondary.metadata.get("rationale", ""))[:500],
+                    "score_delta": round(delta, 4),
+                    "agreement": bool(primary.hit == secondary.hit),
+                }
+            )
+
+    @staticmethod
+    def _extract_judge_disagreements(record: Dict[str, Any]) -> List[Dict[str, Any]]:
+        rows: List[Dict[str, Any]] = []
+        detectors = record.get("detectors", {})
+        if not isinstance(detectors, dict):
+            return rows
+
+        for detector_name, detector in detectors.items():
+            if not isinstance(detector, dict):
+                continue
+            metadata = detector.get("metadata", {})
+            if not isinstance(metadata, dict):
+                continue
+            if "secondary_score" not in metadata:
+                continue
+
+            rows.append(
+                {
+                    "condition": record.get("condition", "unknown"),
+                    "task_type": record.get("task_type", "general"),
+                    "prompt_id": record.get("prompt_id"),
+                    "sample_idx": record.get("sample_idx"),
+                    "detector": detector_name,
+                    "primary_score": float(detector.get("score", 0.0)),
+                    "secondary_score": float(metadata.get("secondary_score", 0.0)),
+                    "score_delta": float(metadata.get("score_delta", 0.0)),
+                    "agreement": bool(metadata.get("agreement", False)),
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _summarize_judge_disagreements(
+        rows: List[Dict[str, Any]],
+        threshold: float,
+    ) -> Dict[str, Any]:
+        def _init_bucket() -> Dict[str, float]:
+            return {"n": 0.0, "agree": 0.0, "delta_sum": 0.0, "high_disagreement": 0.0}
+
+        def _update(bucket: Dict[str, float], row: Dict[str, Any]) -> None:
+            bucket["n"] += 1.0
+            if row.get("agreement"):
+                bucket["agree"] += 1.0
+            delta = float(row.get("score_delta", 0.0))
+            bucket["delta_sum"] += delta
+            if delta >= threshold:
+                bucket["high_disagreement"] += 1.0
+
+        def _finalize(bucket: Dict[str, float]) -> Dict[str, float]:
+            n = bucket["n"]
+            if n <= 0:
+                return {
+                    "n": 0,
+                    "agreement_pct": 0.0,
+                    "mean_abs_score_delta": 0.0,
+                    "high_disagreement_pct": 0.0,
+                }
+            return {
+                "n": int(n),
+                "agreement_pct": round(100.0 * bucket["agree"] / n, 1),
+                "mean_abs_score_delta": round(bucket["delta_sum"] / n, 4),
+                "high_disagreement_pct": round(100.0 * bucket["high_disagreement"] / n, 1),
+            }
+
+        overall = _init_bucket()
+        by_condition: DefaultDict[str, Dict[str, float]] = defaultdict(_init_bucket)
+        by_task_type: DefaultDict[str, Dict[str, float]] = defaultdict(_init_bucket)
+
+        for row in rows:
+            _update(overall, row)
+            _update(by_condition[row.get("condition", "unknown")], row)
+            _update(by_task_type[row.get("task_type", "general")], row)
+
+        top_disagreements = sorted(
+            rows,
+            key=lambda row: row.get("score_delta", 0.0),
+            reverse=True,
+        )[:10]
+
+        return {
+            "threshold": threshold,
+            "overall": _finalize(overall),
+            "conditions": {
+                key: _finalize(bucket)
+                for key, bucket in sorted(by_condition.items())
+            },
+            "task_types": {
+                key: _finalize(bucket)
+                for key, bucket in sorted(by_task_type.items())
+            },
+            "top_disagreements": top_disagreements,
+        }
 
     @staticmethod
     def _record_task_type(rec: dict, suite: TicSuite) -> str:

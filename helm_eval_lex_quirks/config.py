@@ -79,6 +79,8 @@ class EvalConfig:
     pairwise_time_decay_halflife_days: Optional[int] = None
     run_tag: Optional[str]       = None
     judge_model: Optional[str]   = None
+    judge_model_secondary: Optional[str] = None
+    judge_disagreement_threshold: float = 0.4
     seed: int                    = 42
     dry_run: bool                = False
     request_interval: float      = 2.0   # seconds between API calls; increase for free-tier accounts
