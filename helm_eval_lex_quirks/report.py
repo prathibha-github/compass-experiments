@@ -29,6 +29,13 @@ def _top_detector(stats: dict) -> Tuple[str, Dict[str, Any]]:
     )
 
 
+def _pairwise_results(results_by_model: Dict[str, EvalResults]) -> Dict[str, dict]:
+    for res in results_by_model.values():
+        if res.pairwise_preference_results:
+            return res.pairwise_preference_results
+    return {}
+
+
 def _summary_dict(res: EvalResults) -> dict:
     """Aggregate metrics only — per-instance records live in checkpoint JSONL files."""
     out = {
@@ -280,6 +287,39 @@ def format_table(results_by_model: Dict[str, EvalResults]) -> str:
                         f"lift={row['mean_count_lift']:>5.2f}"
                     )
 
+    # Pairwise preference
+    pairwise = _pairwise_results(results_by_model)
+    if pairwise:
+        lines += [
+            "",
+            sep,
+            "  PAIRWISE PREFERENCE",
+            "  Lower detector-count total wins on shared style-suite records",
+            "-" * 96,
+        ]
+        for suite_name, suite_results in pairwise.items():
+            lines.append(f"  Suite: {suite_name}")
+            for row in suite_results.get("overall", {}).get("ranking", []):
+                lines.append(
+                    f"    {row['model']:<30}  "
+                    f"score={row['preference_score']:>6.2f}  "
+                    f"matches={row['matches']:>4}  "
+                    f"W/L/T={row['wins']}/{row['losses']}/{row['ties']}"
+                )
+            task_types = suite_results.get("task_types", {})
+            if task_types:
+                lines.append("    Task types:")
+                for task_type, task_results in task_types.items():
+                    ranking = task_results.get("ranking", [])
+                    if not ranking:
+                        continue
+                    leader = ranking[0]
+                    lines.append(
+                        f"      {task_type:<24}  "
+                        f"leader={leader['model']:<24}  "
+                        f"score={leader['preference_score']:>6.2f}"
+                    )
+
     lines.append(sep)
     return "\n".join(lines)
 
@@ -289,6 +329,9 @@ def save(results_by_model: Dict[str, EvalResults], output_dir: str):
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     summary = {m: _summary_dict(r) for m, r in results_by_model.items()}
+    pairwise = _pairwise_results(results_by_model)
+    if pairwise:
+        summary["pairwise_preference"] = pairwise
     json_path = os.path.join(output_dir, f"results_{ts}.json")
     with open(json_path, "w") as f:
         json.dump(summary, f, indent=2)

@@ -24,6 +24,9 @@ python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite 
 
 # Run persona-transfer analysis over selected style suites
 python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite all --persona-transfer
+
+# Compare models head-to-head on style-suite checkpoints
+python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite all --pairwise-preference --models gpt-4o-mini gpt-4.1-nano
 """
 import argparse
 import logging
@@ -78,6 +81,8 @@ def main(argv=None):
                         help="Repetitions per prompt for generic tic/style suites")
     parser.add_argument("--persona-transfer", action="store_true",
                         help="Compare persona/style conditions against each style suite baseline")
+    parser.add_argument("--pairwise-preference", action="store_true",
+                        help="Compare models head-to-head on shared style-suite records")
     parser.add_argument("--seed",             type=int,   default=42)
     parser.add_argument("--request-interval", type=float, default=2.0,
                         help="Seconds between API calls. Raise to 4-6 for free-tier accounts.")
@@ -96,7 +101,7 @@ def main(argv=None):
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
-    if args.persona_transfer and not style_suites and not args.linkedin_style:
+    if (args.persona_transfer or args.pairwise_preference) and not style_suites and not args.linkedin_style:
         style_suites = expand_suite_names(["all"])
     if args.style_only:
         args.no_robustness = True
@@ -128,6 +133,7 @@ def main(argv=None):
         style_only=args.style_only,
         style_samples=args.style_samples,
         run_persona_transfer=args.persona_transfer,
+        run_pairwise_preference=args.pairwise_preference,
         seed=args.seed,
         dry_run=args.dry_run,
         request_interval=args.request_interval,
@@ -149,6 +155,8 @@ def main(argv=None):
             extras.append("style-suites=" + ",".join(cfg.style_suites))
         if cfg.run_persona_transfer:
             extras.append("persona-transfer")
+        if cfg.run_pairwise_preference:
+            extras.append("pairwise-preference")
         extra_str = f"  [{', '.join(extras)}]" if extras else ""
         print(f"  {model:<20}  ~${cost:.4f}{extra_str}")
 
