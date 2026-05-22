@@ -139,6 +139,8 @@ class LLMJudgeDetector(TicDetector):
         return self.parse_response(raw)
 
     def parse_response(self, raw: str) -> DetectorResult:
+        # Keep score bounded to [0, 1] so downstream aggregation remains
+        # comparable across judge prompts/models and robust to malformed output.
         try:
             payload = json.loads(raw)
         except json.JSONDecodeError:
@@ -166,6 +168,7 @@ class LLMJudgeDetector(TicDetector):
             hit=hit,
             metadata={
                 "confidence": payload.get("confidence"),
+                # Cap rationale/raw payload snapshots for checkpoint size hygiene.
                 "rationale": str(payload.get("rationale", ""))[:500],
                 "raw": raw[:500],
             },
