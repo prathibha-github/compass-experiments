@@ -640,8 +640,6 @@ class EvalRunner:
             secondary = secondary_results.get(detector_name)
             if secondary is None:
                 continue
-            if "confidence" not in primary.metadata:
-                continue
 
             delta = abs(primary.score - secondary.score)
             primary.metadata.update(
