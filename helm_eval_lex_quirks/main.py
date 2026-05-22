@@ -30,6 +30,9 @@ python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite 
 
 # Compare models on one detector only
 python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite rest_cai_validation --pairwise-detector rest_suggestion --models claude-haiku-4-5-20251001 claude-sonnet-4-6
+
+# Run subjective tone judges
+python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-... --style-only --style-suite llm_judge_tone --judge-model gpt-4o-mini --models claude-haiku-4-5-20251001
 """
 import argparse
 import logging
@@ -45,6 +48,7 @@ logging.basicConfig(
 
 from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, model_provider
 from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY, expand_suite_names
+from helm_eval_lex_quirks.metrics.tic_suite import suite_uses_llm_judge
 from helm_eval_lex_quirks.runner import SCENARIO_REGISTRY, EvalRunner
 from helm_eval_lex_quirks import report as rpt
 
@@ -89,6 +93,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                         help="Compare models head-to-head on shared style-suite records")
     parser.add_argument("--pairwise-detector",
                         help="Score pairwise comparisons using one detector count; implies --pairwise-preference")
+    parser.add_argument("--judge-model",
+                        help="Model used for suites with LLM judge detectors")
     parser.add_argument("--seed",             type=int,   default=42)
     parser.add_argument("--request-interval", type=float, default=2.0,
                         help="Seconds between API calls. Raise to 4-6 for free-tier accounts.")
@@ -115,7 +121,17 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         if not style_suites:
             print("ERROR: --style-only requires at least one --style-suite.", file=sys.stderr)
             sys.exit(1)
-    providers = {model_provider(model) for model in args.models}
+    uses_llm_judge = any(
+        suite_uses_llm_judge(STYLE_SUITE_REGISTRY[suite_key])
+        for suite_key in style_suites
+    )
+    if uses_llm_judge and not args.judge_model:
+        print("ERROR: selected style suites with LLM judges require --judge-model.", file=sys.stderr)
+        sys.exit(1)
+    model_names = list(args.models)
+    if args.judge_model:
+        model_names.append(args.judge_model)
+    providers = {model_provider(model) for model in model_names}
     if "openai" in providers and not args.api_key:
         print("ERROR: OpenAI models require --api-key or OPENAI_API_KEY.", file=sys.stderr)
         sys.exit(1)
@@ -141,6 +157,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         run_persona_transfer=args.persona_transfer,
         run_pairwise_preference=args.pairwise_preference or bool(args.pairwise_detector),
         pairwise_detector=args.pairwise_detector,
+        judge_model=args.judge_model,
         seed=args.seed,
         dry_run=args.dry_run,
         request_interval=args.request_interval,
@@ -167,6 +184,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             if cfg.pairwise_detector:
                 pairwise_label += f"={cfg.pairwise_detector}"
             extras.append(pairwise_label)
+        if cfg.judge_model:
+            extras.append(f"judge-model={cfg.judge_model}")
         extra_str = f"  [{', '.join(extras)}]" if extras else ""
         print(f"  {model:<20}  ~${cost:.4f}{extra_str}")
 

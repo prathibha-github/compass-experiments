@@ -102,6 +102,14 @@ def _append_tic_suite_sections(lines: List[str], results_by_model: Dict[str, Eva
             checkpoint_path = suite_results.get("checkpoint_path")
             if checkpoint_path:
                 lines.append(f"  Checkpoint: {checkpoint_path}")
+            judge = suite_results.get("judge")
+            if judge:
+                tok = judge.get("token_usage", {})
+                lines.append(
+                    f"  Judge: {judge.get('model')}  "
+                    f"${judge.get('cost_usd', 0.0):.4f}  "
+                    f"({tok.get('input', 0):,} in + {tok.get('output', 0):,} out tokens)"
+                )
 
             task_segments = suite_results.get("task_segments", {})
             if task_segments:
