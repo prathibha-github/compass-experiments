@@ -72,13 +72,16 @@ class OllamaClient:
 
         Returns:
             ModelResponse with completion text
-        """
-        try:
-            # Build full prompt with system message if provided
-            full_prompt = prompt
-            if system:
-                full_prompt = f"<system>\n{system}\n</system>\n\n{prompt}"
 
+        Raises:
+            RuntimeError: If Ollama API call fails
+        """
+        # Build full prompt with system message if provided
+        full_prompt = prompt
+        if system:
+            full_prompt = f"<system>\n{system}\n</system>\n\n{prompt}"
+
+        try:
             # Call Ollama API
             response = self.api_client.generate(
                 model=self.model,
@@ -91,6 +94,8 @@ class OllamaClient:
             )
 
             completion = response.get("response", "")
+            if not completion:
+                raise RuntimeError(f"Empty response from {self.model}")
 
             # Ollama doesn't expose token counts directly,
             # but we can estimate from response length
@@ -106,10 +111,4 @@ class OllamaClient:
 
         except Exception as e:
             logger.error(f"Ollama error for model {self.model}: {e}")
-            # Return empty response on error
-            return ModelResponse(
-                completion="",
-                logprobs=None,
-                input_tokens=0,
-                output_tokens=0,
-            )
+            raise RuntimeError(f"Ollama inference failed for {self.model}: {e}") from e

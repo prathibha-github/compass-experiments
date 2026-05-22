@@ -1,28 +1,33 @@
 #!/usr/bin/env python3
 """
-Phase 2 Constitutional Compliance Benchmark Runner.
+Constitutional Compliance Benchmark Runner.
 
-Evaluates models across 5 constitutional rubrics using local (Ollama) and
-cloud-based (OpenAI/Anthropic) judges.
+Evaluates models across multiple evaluation suites using LLM-based and heuristic judges.
+Supports local (Ollama) and cloud-based (OpenAI/Anthropic) models for evaluation,
+with separate configurable judge model for scoring.
 
 Usage:
-    python phase2_benchmark.py --models llama3.1 mistral phi --output-dir results/phase2
-    python phase2_benchmark.py --models gpt-4o-mini claude-haiku --judge-model gpt-4o --samples 10
+    python phase2_benchmark.py --models llama3.1 mistral phi
+    python phase2_benchmark.py --models gpt-4o-mini claude-haiku --judge-model gpt-4o
+    python phase2_benchmark.py --suites task_focus truthfulness --samples 5 --resume
 """
 import argparse
 import json
 import logging
 import os
+import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from helm_eval_lex_quirks.config import ModelConfig, model_config
 from helm_eval_lex_quirks.metrics.builtin_tic_suites import (
     STYLE_SUITE_REGISTRY,
 )
-from helm_eval_lex_quirks.metrics.tic_suite import LLMJudgeDetector
+from helm_eval_lex_quirks.metrics.tic_suite import (
+    LLMJudgeDetector,
+    LLM_JUDGE_SYSTEM_PROMPT,
+)
 from helm_eval_lex_quirks.models.anthropic_client import AnthropicClient
 from helm_eval_lex_quirks.models.ollama_client import OllamaClient
 from helm_eval_lex_quirks.models.openai_client import OpenAIClient
@@ -47,17 +52,15 @@ class BenchmarkResult:
     hit: bool
     confidence: Optional[float] = None
     rationale: str = ""
-    tokens_used: Dict = None
+    input_tokens: int = 0
+    output_tokens: int = 0
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         """Convert to dict for JSON serialization."""
-        d = asdict(self)
-        if self.tokens_used is None:
-            d["tokens_used"] = {}
-        return d
+        return asdict(self)
 
 
-def create_client(model: str, judge_model: str) -> Tuple[object, str]:
+def create_client(model: str) -> Tuple[object, str]:
     """
     Create appropriate client for model.
 
@@ -67,23 +70,48 @@ def create_client(model: str, judge_model: str) -> Tuple[object, str]:
     # Local models via Ollama
     ollama_models = {"llama3.1", "mistral", "phi", "llama3", "llama3.2"}
     if any(model.startswith(m) for m in ollama_models):
-        return OllamaClient(model=f"{model}:latest" if ":" not in model else model), "ollama"
+        model_name = f"{model}:latest" if ":" not in model else model
+        return OllamaClient(model=model_name), "ollama"
 
     # Cloud models
-    try:
-        cfg = model_config(model)
-    except ValueError:
-        raise ValueError(f"Unknown model: {model}")
-
     if "gpt" in model.lower():
-        return OpenAIClient(api_key=os.getenv("OPENAI_API_KEY"), model=model), "openai"
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY not set")
+        return OpenAIClient(api_key=api_key, model=model), "openai"
     elif "claude" in model.lower():
-        return (
-            AnthropicClient(api_key=os.getenv("ANTHROPIC_API_KEY"), model=model),
-            "anthropic",
-        )
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY not set")
+        return AnthropicClient(api_key=api_key, model=model), "anthropic"
     else:
         raise ValueError(f"Unsupported model: {model}")
+
+
+def load_checkpoint(checkpoint_file: Path) -> Dict[str, Any]:
+    """Load previous results from checkpoint JSONL."""
+    results = {}
+    if not checkpoint_file.exists():
+        return results
+
+    with open(checkpoint_file) as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                result = json.loads(line)
+                key = (
+                    result["model"],
+                    result["suite"],
+                    result["detector"],
+                    result["prompt_id"],
+                    result["condition"],
+                )
+                results[key] = result
+            except json.JSONDecodeError:
+                continue
+
+    return results
 
 
 def run_benchmark(
@@ -91,29 +119,46 @@ def run_benchmark(
     judge_model: str,
     suites: List[str],
     samples_per_condition: int = 5,
-    output_dir: str = "results/phase2",
+    output_dir: str = "results/benchmark",
+    resume: bool = False,
 ) -> None:
     """
-    Run Phase 2 benchmark.
+    Run benchmark evaluation.
 
     Args:
-        models: List of model names to benchmark
-        judge_model: Judge model for LLM-based rubrics
+        models: List of model names to evaluate
+        judge_model: Model to use for LLM-based rubrics
         suites: List of suite names to run
         samples_per_condition: Samples per condition per suite
         output_dir: Where to save results
+        resume: Whether to load and continue from checkpoint
     """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"Phase 2 Benchmark Runner")
-    logger.info(f"  Models: {', '.join(models)}")
-    logger.info(f"  Judge: {judge_model}")
-    logger.info(f"  Suites: {', '.join(suites)}")
-    logger.info(f"  Output: {output_path.absolute()}")
-
-    results: List[BenchmarkResult] = []
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    checkpoint_file = output_path / f"benchmark_{timestamp}.jsonl"
+
+    logger.info("Benchmark Runner")
+    logger.info(f"  Models to evaluate: {', '.join(models)}")
+    logger.info(f"  Judge model: {judge_model}")
+    logger.info(f"  Suites: {', '.join(suites)}")
+    logger.info(f"  Checkpoint: {checkpoint_file}")
+
+    # Load judge client once (shared across all evaluations)
+    logger.info(f"\nInitializing judge client: {judge_model}")
+    try:
+        judge_client, judge_type = create_client(judge_model)
+        logger.info(f"  Judge type: {judge_type}")
+    except Exception as e:
+        logger.error(f"Failed to create judge client: {e}")
+        sys.exit(1)
+
+    # Load checkpoint if resuming
+    completed = load_checkpoint(checkpoint_file) if resume else {}
+    logger.info(f"Checkpoint has {len(completed)} completed evaluations")
+
+    results_written = 0
 
     for suite_name in suites:
         if suite_name not in STYLE_SUITE_REGISTRY:
@@ -129,7 +174,7 @@ def run_benchmark(
             logger.info(f"\n  Model: {model}")
 
             try:
-                client, client_type = create_client(model, judge_model)
+                client, client_type = create_client(model)
                 logger.info(f"    Client type: {client_type}")
             except Exception as e:
                 logger.error(f"    Failed to create client: {e}")
@@ -139,137 +184,162 @@ def run_benchmark(
             for prompt in suite.prompts:
                 for condition in suite.conditions:
                     for sample_idx in range(samples_per_condition):
-                        try:
-                            # Build prompt with system condition
-                            system_prompt = condition.system_prompt
-                            user_prompt = prompt.text
+                        # Check if already completed
+                        result_key = (model, suite_name, "", prompt.id, condition.name)
+                        if result_key in completed:
+                            logger.debug(
+                                f"    Skipping (already evaluated): "
+                                f"{prompt.id} [{condition.name}] sample {sample_idx + 1}"
+                            )
+                            continue
 
+                        try:
                             # Generate completion
                             response = client.complete(
-                                prompt=user_prompt,
+                                prompt=prompt.text,
                                 max_tokens=256,
                                 temperature=0.0,
-                                system=system_prompt,
+                                system=condition.system_prompt,
                             )
 
                             # Run detectors
                             for detector in suite.detectors:
-                                # LLMJudgeDetector requires a judge function
-                                if isinstance(detector, LLMJudgeDetector):
-                                    # Create judge function for this detector
-                                    def judge_fn(prompt: str, max_tokens: int) -> str:
-                                        judge_response = client.complete(
-                                            prompt=prompt,
-                                            max_tokens=max_tokens,
-                                            temperature=0.0,
+                                try:
+                                    if isinstance(detector, LLMJudgeDetector):
+                                        # Create judge function with strict system prompt
+                                        def judge_fn(prompt_text: str, max_tokens: int) -> str:
+                                            judge_response = judge_client.complete(
+                                                prompt=prompt_text,
+                                                max_tokens=max_tokens,
+                                                temperature=0.0,
+                                                system=LLM_JUDGE_SYSTEM_PROMPT,
+                                            )
+                                            return judge_response.completion
+
+                                        detector_result = detector.detect_with_judge(
+                                            text=response.completion,
+                                            judge_fn=judge_fn,
                                         )
-                                        return judge_response.completion
+                                    else:
+                                        # Regular heuristic detectors
+                                        detector_result = detector.detect(
+                                            text=response.completion
+                                        )
 
-                                    detector_result = detector.detect_with_judge(
-                                        text=response.completion,
-                                        judge_fn=judge_fn,
+                                    # Extract metadata
+                                    confidence = detector_result.metadata.get("confidence")
+                                    rationale = detector_result.metadata.get("rationale", "")
+
+                                    # Create result
+                                    bench_result = BenchmarkResult(
+                                        model=model,
+                                        suite=suite_name,
+                                        detector=detector.name,
+                                        prompt_id=prompt.id,
+                                        condition=condition.name,
+                                        score=detector_result.score,
+                                        hit=detector_result.hit,
+                                        confidence=confidence,
+                                        rationale=rationale,
+                                        input_tokens=response.input_tokens,
+                                        output_tokens=response.output_tokens,
                                     )
-                                else:
-                                    # Regular detectors just need the text
-                                    detector_result = detector.detect(
-                                        text=response.completion
+
+                                    # Write to checkpoint immediately
+                                    with open(checkpoint_file, "a") as f:
+                                        f.write(json.dumps(bench_result.to_dict()) + "\n")
+                                    results_written += 1
+
+                                except Exception as e:
+                                    logger.error(
+                                        f"    Detector {detector.name} failed for "
+                                        f"{prompt.id} [{condition.name}]: {e}"
                                     )
-
-                                # Convert detector output to BenchmarkResult
-                                confidence = detector_result.metadata.get("confidence")
-                                rationale = detector_result.metadata.get("rationale", "")
-
-                                bench_result = BenchmarkResult(
-                                    model=model,
-                                    suite=suite_name,
-                                    detector=detector.name,
-                                    prompt_id=prompt.id,
-                                    condition=condition.name,
-                                    score=detector_result.score,
-                                    hit=detector_result.hit,
-                                    confidence=confidence,
-                                    rationale=rationale,
-                                    tokens_used=response.total_tokens
-                                    if hasattr(response, "total_tokens")
-                                    else {},
-                                )
-                                results.append(bench_result)
+                                    continue
 
                             logger.info(
-                                f"    [{suite_name:15}] {prompt.id:15} "
+                                f"    [{suite_name:20}] {prompt.id:15} "
                                 f"[{condition.name:12}] sample {sample_idx + 1}/{samples_per_condition}"
                             )
 
                         except Exception as e:
                             logger.error(
-                                f"    Error evaluating {prompt.id} "
+                                f"    Failed to evaluate {prompt.id} "
                                 f"[{condition.name}] sample {sample_idx + 1}: {e}"
                             )
                             continue
 
-    # Save results
-    results_file = output_path / f"phase2_results_{timestamp}.jsonl"
-    with open(results_file, "w") as f:
-        for result in results:
-            f.write(json.dumps(result.to_dict()) + "\n")
-    logger.info(f"\n✓ Results saved: {results_file}")
+    logger.info(f"\n{'=' * 70}")
+    logger.info(f"✓ Benchmark complete")
+    logger.info(f"  Results written: {results_written}")
+    logger.info(f"  Checkpoint: {checkpoint_file}")
 
     # Generate summary
-    summary_file = output_path / f"phase2_summary_{timestamp}.txt"
-    _generate_summary(results, summary_file)
-    logger.info(f"✓ Summary saved: {summary_file}")
+    _generate_summary(checkpoint_file, output_path / f"benchmark_summary_{timestamp}.txt")
 
 
-def _generate_summary(results: List[BenchmarkResult], output_file: Path) -> None:
-    """Generate human-readable summary."""
+def _generate_summary(checkpoint_file: Path, summary_file: Path) -> None:
+    """Generate human-readable summary from checkpoint."""
     from collections import defaultdict
 
     summary = defaultdict(lambda: {"hits": 0, "total": 0, "scores": []})
 
-    for result in results:
-        key = f"{result.model} | {result.suite} | {result.detector}"
-        summary[key]["hits"] += int(result.hit)
-        summary[key]["total"] += 1
-        summary[key]["scores"].append(result.score)
+    with open(checkpoint_file) as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                result = json.loads(line)
+                key = f"{result['model']} | {result['suite']} | {result['detector']}"
+                summary[key]["hits"] += int(result["hit"])
+                summary[key]["total"] += 1
+                summary[key]["scores"].append(result["score"])
+            except json.JSONDecodeError:
+                continue
 
-    with open(output_file, "w") as f:
-        f.write("Phase 2 Constitutional Compliance Benchmark Summary\n")
+    with open(summary_file, "w") as f:
+        f.write("Constitutional Compliance Benchmark Summary\n")
         f.write(f"Generated: {datetime.now().isoformat()}\n")
-        f.write(f"Results: {len(results)} evaluations\n\n")
+        f.write(f"Checkpoint: {checkpoint_file}\n\n")
 
         f.write("Model | Suite | Detector | Hit Rate | Mean Score | Samples\n")
-        f.write("-" * 80 + "\n")
+        f.write("-" * 90 + "\n")
 
         for key in sorted(summary.keys()):
             stats = summary[key]
             hit_rate = 100 * stats["hits"] / stats["total"] if stats["total"] > 0 else 0
             mean_score = sum(stats["scores"]) / len(stats["scores"]) if stats["scores"] else 0
             f.write(
-                f"{key} | {hit_rate:.1f}% | {mean_score:.3f} | {stats['total']}\n"
+                f"{key} | {hit_rate:5.1f}% | {mean_score:6.3f} | {stats['total']:3d}\n"
             )
 
-        f.write("\n" + "=" * 80 + "\n")
-        f.write(f"Total evaluations: {len(results)}\n")
+        f.write("\n" + "=" * 90 + "\n")
+        f.write(f"Total evaluations: {sum(s['total'] for s in summary.values())}\n")
+
+    logger.info(f"✓ Summary saved: {summary_file}")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Phase 2 Constitutional Compliance Benchmark",
+        description="Constitutional Compliance Benchmark Runner",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run with local Ollama models
+  # Evaluate local models (no API keys required)
   python phase2_benchmark.py --models llama3.1 mistral phi
 
-  # Run with cloud models
+  # Evaluate cloud models with LLM judge
   python phase2_benchmark.py --models gpt-4o-mini claude-haiku --judge-model gpt-4o
 
   # Custom configuration
   python phase2_benchmark.py \\
     --models llama3.1 gpt-4o-mini claude-haiku \\
-    --suites task_focus truthfulness llm_judge_tone \\
-    --samples 10 \\
-    --output-dir results/phase2_v2
+    --judge-model gpt-4o \\
+    --suites task_focus truthfulness \\
+    --samples 10
+
+  # Resume from checkpoint
+  python phase2_benchmark.py --models llama3.1 --resume
         """,
     )
 
@@ -277,14 +347,14 @@ Examples:
         "--models",
         nargs="+",
         default=["llama3.1", "mistral", "phi"],
-        help="Models to benchmark (default: llama3.1 mistral phi)",
+        help="Models to evaluate (default: llama3.1 mistral phi)",
     )
 
     parser.add_argument(
         "--suites",
         nargs="+",
-        default=["task_focus", "truthfulness", "llm_judge_tone"],
-        help="Suites to run (default: task_focus truthfulness llm_judge_tone)",
+        default=["task_focus", "truthfulness"],
+        help="Suites to run (default: task_focus truthfulness)",
     )
 
     parser.add_argument(
@@ -302,8 +372,14 @@ Examples:
 
     parser.add_argument(
         "--output-dir",
-        default="results/phase2",
-        help="Output directory (default: results/phase2)",
+        default="results/benchmark",
+        help="Output directory (default: results/benchmark)",
+    )
+
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from checkpoint (load latest results)",
     )
 
     args = parser.parse_args()
@@ -314,6 +390,7 @@ Examples:
         suites=args.suites,
         samples_per_condition=args.samples,
         output_dir=args.output_dir,
+        resume=args.resume,
     )
 
 
