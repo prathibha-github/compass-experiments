@@ -471,9 +471,18 @@ def save(results_by_model: Dict[str, EvalResults], output_dir: str) -> Tuple[str
 def _load_thresholds(path: str) -> Dict[str, Any]:
     if not path or not os.path.exists(path):
         return {}
-    with open(path) as f:
-        raw = yaml.safe_load(f) or {}
+    try:
+        with open(path) as f:
+            raw = yaml.safe_load(f) or {}
+    except (yaml.YAMLError, OSError):
+        return {}
     return raw if isinstance(raw, dict) else {}
+
+
+def _is_low_sample(stats: Dict[str, Any], det_stats: Dict[str, Any]) -> bool:
+    # Condition-level low_sample is the primary signal; detector-level fallback
+    # supports checkpoint variants that store it only under detectors.
+    return bool(stats.get("low_sample") or det_stats.get("low_sample"))
 
 
 def _iter_detector_rows(results_by_model: Dict[str, EvalResults]) -> List[Dict[str, Any]]:
@@ -492,7 +501,7 @@ def _iter_detector_rows(results_by_model: Dict[str, EvalResults]) -> List[Dict[s
                             "condition": condition,
                             "detector": detector,
                             "n_outputs": int(stats.get("n_outputs", 0)),
-                            "low_sample": bool(stats.get("low_sample") or det_stats.get("low_sample")),
+                            "low_sample": _is_low_sample(stats, det_stats),
                             "pct_hit": float(det_stats.get("pct_hit", 0.0)),
                             "mean_count": float(det_stats.get("mean_count", 0.0)),
                             "ci_low": det_stats.get("pct_hit_ci_low"),
@@ -512,7 +521,7 @@ def _iter_detector_rows(results_by_model: Dict[str, EvalResults]) -> List[Dict[s
                                 "condition": condition,
                                 "detector": detector,
                                 "n_outputs": int(stats.get("n_outputs", 0)),
-                                "low_sample": bool(stats.get("low_sample") or det_stats.get("low_sample")),
+                                "low_sample": _is_low_sample(stats, det_stats),
                                 "pct_hit": float(det_stats.get("pct_hit", 0.0)),
                                 "mean_count": float(det_stats.get("mean_count", 0.0)),
                                 "ci_low": det_stats.get("pct_hit_ci_low"),
@@ -602,6 +611,10 @@ def _deep_dive_rows(
         )
         crossing = crossing_index.get(key)
         severity = float(crossing["exceed_by"]) if crossing else 0.0
+        # Priority score = severity + uncertainty where:
+        # - severity is threshold exceedance magnitude (0 if no crossing),
+        # - uncertainty is 1.0 for low-n plus CI width scaled to [0,1].
+        # This intentionally includes uncertain non-crossing rows.
         uncertainty = (1.0 if row.get("low_sample") else 0.0) + _ci_width(row) / 100.0
         score = severity + uncertainty
         if score <= 0:
@@ -638,6 +651,13 @@ def save_safety_case(
     thresholds_path: str = "configs/thresholds.yaml",
     deep_dive_top_k: int = 0,
 ) -> str:
+    """
+    Generate a markdown safety-case report for tic-suite outputs.
+
+    The report includes threshold crossings (from thresholds YAML), uncertainty
+    flags, deep-dive candidates, and recommendations. Returns the path to the
+    generated markdown file, or an empty string when no tic-suite results exist.
+    """
     if not any(res.tic_results for res in results_by_model.values()):
         return ""
 
@@ -674,6 +694,7 @@ def save_safety_case(
     if crossings:
         lines.append("| Model | Suite | Segment | Condition | Detector | Metric | Value | Threshold | Exceed By |")
         lines.append("|---|---|---|---|---|---:|---:|---:|---:|")
+        # Cap table size for readability in long multi-model runs.
         for row in sorted(crossings, key=lambda r: r["exceed_by"], reverse=True)[:50]:
             segment = row["segment"] if row["segment"] == "condition" else f"task:{row.get('task_type')}"
             lines.append(
