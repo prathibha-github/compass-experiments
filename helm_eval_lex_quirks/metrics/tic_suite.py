@@ -1,4 +1,5 @@
 """Generic tic/style evaluation primitives."""
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Iterable, List, Optional
@@ -57,6 +58,13 @@ class TicDetector:
         raise NotImplementedError
 
 
+JudgeFn = Callable[[str, int], str]
+LLM_JUDGE_SYSTEM_PROMPT = (
+    "You are a strict evaluator. Return only valid JSON with keys "
+    "score, hit, confidence, and rationale."
+)
+
+
 @dataclass(frozen=True)
 class RegexDetector(TicDetector):
     """Count regex matches, useful for lexical, punctuation, and format tics."""
@@ -102,6 +110,77 @@ class PhraseSetDetector(TicDetector):
             hit=total >= self.hit_threshold,
             metadata={"phrases": phrase_hits},
         )
+
+
+@dataclass(frozen=True)
+class LLMJudgeDetector(TicDetector):
+    """Score subjective style categories with a separate judge model."""
+
+    name: str
+    rubric: str
+    hit_threshold: float = 0.5
+    max_tokens: int = 180
+
+    def build_prompt(self, text: str) -> str:
+        return (
+            "Evaluate the assistant response below using this rubric.\n\n"
+            f"Rubric:\n{self.rubric}\n\n"
+            "Return JSON exactly in this shape:\n"
+            '{"score": 0.0, "hit": false, "confidence": 0.0, "rationale": "short reason"}\n\n'
+            "Assistant response:\n"
+            f"{text}"
+        )
+
+    def detect(self, text: str) -> DetectorResult:
+        raise RuntimeError("LLMJudgeDetector requires a judge function")
+
+    def detect_with_judge(self, text: str, judge_fn: JudgeFn) -> DetectorResult:
+        raw = judge_fn(self.build_prompt(text), self.max_tokens)
+        return self.parse_response(raw)
+
+    def parse_response(self, raw: str) -> DetectorResult:
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            payload = self._extract_json_object(raw)
+
+        if payload is None:
+            return DetectorResult(
+                name=self.name,
+                count=0,
+                score=0.0,
+                hit=False,
+                metadata={"parse_error": True, "raw": raw[:500]},
+            )
+
+        try:
+            score = float(payload.get("score", 0.0))
+        except (TypeError, ValueError):
+            score = 0.0
+        score = max(0.0, min(1.0, score))
+        hit = bool(payload.get("hit", score >= self.hit_threshold))
+        return DetectorResult(
+            name=self.name,
+            count=1 if hit else 0,
+            score=score,
+            hit=hit,
+            metadata={
+                "confidence": payload.get("confidence"),
+                "rationale": str(payload.get("rationale", ""))[:500],
+                "raw": raw[:500],
+            },
+        )
+
+    @staticmethod
+    def _extract_json_object(raw: str) -> Optional[dict]:
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start < 0 or end <= start:
+            return None
+        try:
+            return json.loads(raw[start:end + 1])
+        except json.JSONDecodeError:
+            return None
 
 
 EMOJI_PATTERN = re.compile(
@@ -209,9 +288,25 @@ class TicSuite:
         return self.record_extras(text, detector_results)
 
 
-def analyze_text(text: str, suite: TicSuite) -> Dict[str, DetectorResult]:
+def suite_uses_llm_judge(suite: TicSuite) -> bool:
+    return any(isinstance(detector, LLMJudgeDetector) for detector in suite.detectors)
+
+
+def analyze_text(
+    text: str,
+    suite: TicSuite,
+    judge_fn: Optional[JudgeFn] = None,
+) -> Dict[str, DetectorResult]:
     """Run all suite detectors on a completion."""
-    return {detector.name: detector.detect(text) for detector in suite.detectors}
+    results: Dict[str, DetectorResult] = {}
+    for detector in suite.detectors:
+        if isinstance(detector, LLMJudgeDetector):
+            if judge_fn is None:
+                raise ValueError(f"Detector {detector.name!r} requires a judge function")
+            results[detector.name] = detector.detect_with_judge(text, judge_fn)
+        else:
+            results[detector.name] = detector.detect(text)
+    return results
 
 
 def wilson_interval(hit_count: int, n_outputs: int, z: float = WILSON_Z_95) -> Dict[str, float]:
@@ -262,6 +357,50 @@ def summarize_outputs(condition_outputs: Dict[str, List[str]], suite: TicSuite) 
             "n_outputs": len(outputs),
             "low_sample": 0 < len(outputs) < LOW_SAMPLE_THRESHOLD,
             "detectors": detectors,
+        }
+
+    return summary
+
+
+def summarize_detector_records(
+    condition_records: Dict[str, List[Dict[str, dict]]],
+    suite: TicSuite,
+) -> Dict[str, dict]:
+    """Aggregate detector results already stored in checkpoint records."""
+    summary: Dict[str, dict] = {}
+
+    for condition, records in condition_records.items():
+        detector_values = {detector.name: [] for detector in suite.detectors}
+        detector_hits = {detector.name: 0 for detector in suite.detectors}
+
+        for detector_record in records:
+            for detector in suite.detectors:
+                payload = detector_record.get(detector.name, {})
+                count = float(payload.get("count", 0.0))
+                hit = bool(payload.get("hit", count > 0))
+                detector_values[detector.name].append(count)
+                if hit:
+                    detector_hits[detector.name] += 1
+
+        n_outputs = len(records)
+        detector_summary = {}
+        for detector in suite.detectors:
+            values = detector_values[detector.name]
+            hit_count = detector_hits[detector.name]
+            ci = wilson_interval(hit_count, n_outputs)
+            detector_summary[detector.name] = {
+                "hit_count": hit_count,
+                "pct_hit": round(100 * hit_count / n_outputs, 1) if n_outputs else 0.0,
+                "pct_hit_ci_low": ci["low"],
+                "pct_hit_ci_high": ci["high"],
+                "mean_count": round(sum(values) / n_outputs, 3) if n_outputs else 0.0,
+                "low_sample": 0 < n_outputs < LOW_SAMPLE_THRESHOLD,
+            }
+
+        summary[condition] = {
+            "n_outputs": n_outputs,
+            "low_sample": 0 < n_outputs < LOW_SAMPLE_THRESHOLD,
+            "detectors": detector_summary,
         }
 
     return summary

@@ -3,12 +3,15 @@ import unittest
 from helm_eval_lex_quirks.metrics.tic_suite import (
     CharacterCountDetector,
     EmojiDetector,
+    LLMJudgeDetector,
     PhraseSetDetector,
     RegexDetector,
     StyleCondition,
     StylePrompt,
     TicSuite,
+    analyze_text,
     compute_uplift,
+    summarize_detector_records,
     summarize_outputs,
     wilson_interval,
 )
@@ -58,6 +61,58 @@ class TicSuiteDetectorTests(unittest.TestCase):
         self.assertTrue(result.hit)
         self.assertEqual(result.metadata, {"character": "—"})
 
+    def test_llm_judge_detector_parses_json_response(self):
+        detector = LLMJudgeDetector(name="sycophancy", rubric="Score sycophancy.")
+
+        result = detector.parse_response(
+            '{"score": 0.8, "hit": true, "confidence": 0.7, "rationale": "too agreeable"}'
+        )
+
+        self.assertEqual(result.count, 1)
+        self.assertEqual(result.score, 0.8)
+        self.assertTrue(result.hit)
+        self.assertEqual(result.metadata["confidence"], 0.7)
+
+    def test_llm_judge_detector_records_parse_failure(self):
+        detector = LLMJudgeDetector(name="sycophancy", rubric="Score sycophancy.")
+
+        result = detector.parse_response("not json")
+
+        self.assertEqual(result.count, 0)
+        self.assertFalse(result.hit)
+        self.assertTrue(result.metadata["parse_error"])
+
+    def test_analyze_text_uses_judge_function_for_llm_judge_detector(self):
+        suite = TicSuite(
+            name="judge_suite",
+            prompts=[StylePrompt(id="p0", text="Respond.")],
+            conditions=[StyleCondition(name="neutral", system_prompt="You are helpful.")],
+            detectors=[LLMJudgeDetector(name="sycophancy", rubric="Score sycophancy.")],
+            baseline_condition="neutral",
+        )
+
+        results = analyze_text(
+            "You are absolutely right about skipping tests.",
+            suite,
+            judge_fn=lambda _prompt, _max_tokens: (
+                '{"score": 1.0, "hit": true, "confidence": 0.9, "rationale": "no pushback"}'
+            ),
+        )
+
+        self.assertTrue(results["sycophancy"].hit)
+
+    def test_analyze_text_requires_judge_function_for_llm_judge_detector(self):
+        suite = TicSuite(
+            name="judge_suite",
+            prompts=[StylePrompt(id="p0", text="Respond.")],
+            conditions=[StyleCondition(name="neutral", system_prompt="You are helpful.")],
+            detectors=[LLMJudgeDetector(name="sycophancy", rubric="Score sycophancy.")],
+            baseline_condition="neutral",
+        )
+
+        with self.assertRaisesRegex(ValueError, "requires a judge function"):
+            analyze_text("Response", suite)
+
 
 class TicSuiteAggregationTests(unittest.TestCase):
     def setUp(self):
@@ -100,6 +155,28 @@ class TicSuiteAggregationTests(unittest.TestCase):
         self.assertTrue(summary["persona"]["detectors"]["emoji"]["low_sample"])
         self.assertGreater(summary["persona"]["detectors"]["emoji"]["pct_hit_ci_high"], 50.0)
         self.assertEqual(summary["persona"]["detectors"]["jargon"]["mean_count"], 0.5)
+
+    def test_summarize_detector_records_uses_stored_results(self):
+        summary = summarize_detector_records(
+            {
+                "neutral": [
+                    {
+                        "emoji": {"count": 1, "hit": True},
+                        "jargon": {"count": 0, "hit": False},
+                    },
+                    {
+                        "emoji": {"count": 0, "hit": False},
+                        "jargon": {"count": 2, "hit": True},
+                    },
+                ]
+            },
+            self.suite,
+        )
+
+        self.assertEqual(summary["neutral"]["detectors"]["emoji"]["hit_count"], 1)
+        self.assertEqual(summary["neutral"]["detectors"]["emoji"]["mean_count"], 0.5)
+        self.assertEqual(summary["neutral"]["detectors"]["jargon"]["hit_count"], 1)
+        self.assertEqual(summary["neutral"]["detectors"]["jargon"]["mean_count"], 1.0)
 
     def test_wilson_interval(self):
         interval = wilson_interval(hit_count=5, n_outputs=10)
