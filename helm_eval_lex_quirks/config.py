@@ -7,6 +7,7 @@ class ModelConfig:
     name: str
     input_cost_per_million: float   # USD per 1M input tokens
     output_cost_per_million: float  # USD per 1M output tokens
+    max_requests: Optional[int] = None  # Max requests per evaluation run (Gemini free tier RPM limits)
 
 
 MODEL_CONFIGS = {
@@ -20,6 +21,10 @@ MODEL_CONFIGS = {
     "claude-haiku-4-5":          ModelConfig("claude-haiku-4-5",          1.00, 5.00),
     "claude-sonnet-4-6":         ModelConfig("claude-sonnet-4-6",         3.00, 15.00),
     "claude-opus-4-7":           ModelConfig("claude-opus-4-7",           5.00, 25.00),
+    "gemini-2.0-flash":          ModelConfig("gemini-2.0-flash",          0.075, 0.30, max_requests=15),
+    "gemini-1.5-pro":            ModelConfig("gemini-1.5-pro",            1.25,  5.00, max_requests=5),
+    "gemini-1.5-flash":          ModelConfig("gemini-1.5-flash",          0.075, 0.30, max_requests=15),
+    "gemini-1.5-flash-8b":       ModelConfig("gemini-1.5-flash-8b",       0.0375, 0.15, max_requests=15),
 }
 
 
@@ -27,6 +32,8 @@ def model_provider(model_name: str) -> str:
     """Return the API provider for a model name."""
     if model_name.startswith("claude-"):
         return "anthropic"
+    if model_name.startswith("gemini-"):
+        return "google"
     return "openai"
 
 
@@ -34,8 +41,11 @@ def model_config(model_name: str) -> ModelConfig:
     """Return pricing config; unknown models fall back to a conservative same-provider default."""
     if model_name in MODEL_CONFIGS:
         return MODEL_CONFIGS[model_name]
-    if model_provider(model_name) == "anthropic":
+    provider = model_provider(model_name)
+    if provider == "anthropic":
         return MODEL_CONFIGS["claude-haiku-4-5-20251001"]
+    if provider == "google":
+        return MODEL_CONFIGS["gemini-2.0-flash"]
     return MODEL_CONFIGS["gpt-4o-mini"]
 
 
@@ -59,6 +69,7 @@ DEFAULT_SCENARIO_CONFIGS = {
 class EvalConfig:
     api_key: Optional[str]
     anthropic_api_key: Optional[str] = None
+    google_api_key: Optional[str] = None
     models: List[str]            = field(default_factory=lambda: ["gpt-4o-mini"])
     scenarios: List[str]         = field(default_factory=lambda: list(DEFAULT_SCENARIO_CONFIGS))
     n_samples: Optional[int]     = None   # overrides per-scenario default when set
