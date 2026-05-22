@@ -233,6 +233,14 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     if uses_llm_judge and not args.judge_model:
         print("ERROR: selected style suites with LLM judges require --judge-model.", file=sys.stderr)
         sys.exit(1)
+    if args.judge_model_secondary and args.judge_model_secondary == args.judge_model:
+        print("ERROR: --judge-model-secondary must differ from --judge-model.", file=sys.stderr)
+        sys.exit(1)
+    if args.judge_model_secondary and not uses_llm_judge:
+        logging.warning(
+            "--judge-model-secondary was provided but no LLM-judge style suite is enabled; "
+            "secondary judge will not be used."
+        )
     if args.pairwise_time_decay_halflife_days is not None and args.pairwise_time_decay_halflife_days <= 0:
         print("ERROR: --pairwise-time-decay-halflife-days must be > 0.", file=sys.stderr)
         sys.exit(1)
