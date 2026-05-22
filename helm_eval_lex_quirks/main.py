@@ -39,6 +39,9 @@ python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite 
 # Run subjective tone judges
 python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-... --style-only --style-suite llm_judge_tone --judge-model gpt-4o-mini --models claude-haiku-4-5-20251001
 
+# Run self-harm safety handling audit (LLM judge required)
+python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-... --style-only --style-suite self_harm_safety --judge-model gpt-4o-mini --models gpt-4o-mini claude-haiku-4-5-20251001
+
 # Run dual-judge disagreement audit for subjective suites
 python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-... \
   --style-only --style-suite llm_judge_tone --judge-model gpt-4o-mini \
@@ -155,7 +158,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                         help="Repetitions per prompt for LinkedIn style detection")
     parser.add_argument("--style-suite", nargs="+", default=[],
                         choices=list(STYLE_SUITE_REGISTRY) + ["all"],
-                        help="Run generic tic/style suite(s): lexical, punctuation, formatting, tone, linkedin, or all")
+                        help="Run tic/style suite(s): lexical, punctuation, formatting, tone, llm_judge_tone, self_harm_safety, linkedin, or all")
     parser.add_argument("--style-only", action="store_true",
                         help="Run only selected generic style suites, skip benchmark scenarios")
     parser.add_argument("--style-samples", type=int, default=4,
