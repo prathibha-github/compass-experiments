@@ -167,7 +167,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         "--style-samples-increment",
         action="store_true",
         help=(
-            "Append this many new style samples per prompt/condition on each run "
+            "Append --style-samples new samples per prompt/condition on each run "
             "instead of targeting fixed sample_idx range [0..style_samples-1]"
         ),
     )
