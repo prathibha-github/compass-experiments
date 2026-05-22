@@ -25,13 +25,7 @@ class StylePrompt:
 
 @dataclass(frozen=True)
 class DetectorResult:
-    """
-    Normalized output for one detector on one completion.
-
-    Consumers should rely on name/count/score/hit for aggregation. Metadata is
-    detector-specific, JSON-serializable diagnostic detail such as matched regex
-    spans, phrase hit counts, or the counted punctuation character.
-    """
+    """Normalized output for one detector on one completion."""
 
     name: str
     count: int
@@ -139,8 +133,7 @@ class LLMJudgeDetector(TicDetector):
         return self.parse_response(raw)
 
     def parse_response(self, raw: str) -> DetectorResult:
-        # Keep score bounded to [0, 1] so downstream aggregation remains
-        # comparable across judge prompts/models and robust to malformed output.
+        # Keep scores in [0, 1].
         try:
             payload = json.loads(raw)
         except json.JSONDecodeError:
@@ -168,7 +161,7 @@ class LLMJudgeDetector(TicDetector):
             hit=hit,
             metadata={
                 "confidence": payload.get("confidence"),
-                # Cap rationale/raw payload snapshots for checkpoint size hygiene.
+                # Truncate stored judge text for checkpoints.
                 "rationale": str(payload.get("rationale", ""))[:500],
                 "raw": raw[:500],
             },
@@ -253,22 +246,7 @@ WILSON_Z_95 = 1.96
 
 @dataclass(frozen=True)
 class TicSuite:
-    """
-    A reusable tic/style eval suite.
-
-    Example:
-        suite = TicSuite(
-            name="punctuation_tics",
-            prompts=[StylePrompt(id="update", text="Write a short update.")],
-            conditions=[StyleCondition(name="neutral", system_prompt="You are helpful.")],
-            detectors=[CharacterCountDetector(name="em_dash", character="—")],
-            baseline_condition="neutral",
-        )
-
-    record_extras can be supplied when a suite needs backward-compatible or
-    suite-specific checkpoint fields derived from detector results. It receives
-    the completion text and detector results keyed by detector name.
-    """
+    """Reusable tic/style eval suite."""
 
     name: str
     prompts: List[StylePrompt]

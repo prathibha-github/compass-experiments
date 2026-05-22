@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""
-Example: Custom Constitutional Compliance Evaluation using Compass
-
-Demonstrates how to use the compass library to evaluate model outputs
-against constitutional principles using the phase2 benchmark infrastructure.
-"""
+"""Example script for constitutional evaluation workflows."""
 
 from compass import (
     JudgeConfig,
@@ -20,20 +15,20 @@ from pathlib import Path
 def evaluate_single_response():
     """Evaluate a single model response against a rubric."""
     print("=" * 70)
-    print("Example 1: Single Response Evaluation")
+    print("Single response evaluation")
     print("=" * 70)
 
-    # Create a judge for sycophancy
+    # Sycophancy judge.
     config = JudgeConfig(
         rubric=RubricLibrary.sycophancy,
         judge_model="gpt-4o-mini",
     )
 
-    # Set up caching for reproducibility
+    # Cache results for repeat runs.
     cache = EvaluationCache(cache_dir=".cache/judges")
     judge = LLMJudge(config, cache)
 
-    # Evaluate a completion
+    # Sample completion.
     completion = """
     That's a great idea! I think it's perfect just as-is.
     You clearly know what you're doing, and I wouldn't change a thing.
@@ -53,12 +48,12 @@ def evaluate_single_response():
 def evaluate_multiple_completions():
     """Evaluate multiple completions and compare them."""
     print("\n" + "=" * 70)
-    print("Example 2: Multiple Completions with Comparison")
+    print("Multiple completions")
     print("=" * 70)
 
     cache = EvaluationCache(cache_dir=".cache/judges")
 
-    # Create judges for different rubrics
+    # Two rubrics.
     sycophancy_config = JudgeConfig(
         rubric=RubricLibrary.sycophancy,
         judge_model="gpt-4o-mini",
@@ -71,7 +66,7 @@ def evaluate_multiple_completions():
     sycophancy_judge = LLMJudge(sycophancy_config, cache)
     truthfulness_judge = LLMJudge(truthfulness_config, cache)
 
-    # Test completions from different models
+    # Example completions.
     completions = {
         "claude-haiku (cautious)": """
             I'm not entirely certain, but based on my training data,
@@ -107,7 +102,7 @@ def evaluate_multiple_completions():
 def compare_models_on_suite():
     """Compare multiple models on a tic suite using pairwise preference."""
     print("\n" + "=" * 70)
-    print("Example 3: Multi-Model Comparison")
+    print("Suite inspection")
     print("=" * 70)
 
     from helm_eval_lex_quirks.metrics.builtin_tic_suites import (
@@ -123,15 +118,13 @@ def compare_models_on_suite():
         prompt_count = len(suite.prompts)
         print(f"  {key}: {prompt_count} prompts, {detector_count} detectors")
 
-    # Show the task_focus suite structure
     suite = TASK_FOCUS_SUITE
-    print(f"\nTask Focus Suite structure:")
+    print("\nTask Focus suite:")
     print(f"  Prompts: {[p.id for p in suite.prompts]}")
     print(f"  Conditions: {[c.name for c in suite.conditions]}")
     print(f"  Detectors: {[d.name for d in suite.detectors]}")
     print(f"  Detector types: {[type(d).__name__ for d in suite.detectors]}")
 
-    # Show that detectors are LLM-based for this suite
     for detector in suite.detectors:
         if isinstance(detector, LLMJudgeDetector):
             print(f"\n  Detector '{detector.name}' rubric:")
@@ -141,7 +134,7 @@ def compare_models_on_suite():
 def reproducibility_example():
     """Demonstrate reproducibility and caching."""
     print("\n" + "=" * 70)
-    print("Example 4: Reproducibility and Caching")
+    print("Reproducibility and caching")
     print("=" * 70)
 
     cache = EvaluationCache(cache_dir=".cache/judges")
@@ -152,7 +145,7 @@ def reproducibility_example():
 
     judge = LLMJudge(config, cache)
 
-    # Evaluate the same text twice - second should be from cache
+    # Same text twice; second call should hit cache.
     text = "Your code looks perfect! I wouldn't change anything."
 
     print("\nFirst evaluation:")
@@ -167,7 +160,6 @@ def reproducibility_example():
     print(f"  From cache: {result2.metadata['from_cache']}")
     print(f"  Cost: ${result2.cost_usd:.4f}")
 
-    # Get reproducibility report
     print("\nReproducibility metadata:")
     metadata = judge.metadata()
     print(f"  Total evaluations: {metadata.total_evaluations}")
@@ -175,7 +167,6 @@ def reproducibility_example():
     print(f"  Total cost: ${metadata.total_cost_usd:.2f}")
     print(f"  Judge model: {metadata.judge_model}")
 
-    # Generate reproducibility report
     report_path = Path("reproducibility_report.txt")
     report = reproducibility_report(judge.metadata())
     print(f"\nFull report saved to {report_path}:")
@@ -185,7 +176,7 @@ def reproducibility_example():
 def run_phase2_example():
     """Show how to use phase2_benchmark with custom configurations."""
     print("\n" + "=" * 70)
-    print("Example 5: Running Phase 2 Benchmark")
+    print("Phase 2 benchmark")
     print("=" * 70)
 
     print("""
@@ -235,8 +226,7 @@ if __name__ == "__main__":
 """)
 
     try:
-        # Note: These examples require API keys or local model setup
-        # Uncomment to run (requires OPENAI_API_KEY or Ollama)
+        # Requires API keys or local models.
         # evaluate_single_response()
         # evaluate_multiple_completions()
         compare_models_on_suite()

@@ -11,7 +11,7 @@ The harness supports:
 - Persona-transfer analysis: whether persona/style system prompts increase tic prevalence on the same neutral tasks.
 - OpenAI and Claude model clients.
 
-These detectors are trend-analysis tools, not definitive classifiers. Tone and formatting indicators can be appropriate in context; compare across models, versions, prompts, and conditions rather than treating a single hit as conclusive.
+These detectors are for relative comparison, not binary classification. Tone and formatting indicators can be appropriate in context.
 
 ## Setup
 
@@ -158,8 +158,8 @@ python -m helm_eval_lex_quirks.main \
   --models gpt-4o-mini gpt-4.1-nano
 ```
 
-LLM-judge suites are opt-in. They add judge-model cost and should be audited for judge bias.
-LLM-judge parsing clamps detector score into `[0, 1]` and truncates stored `rationale`/raw judge text to 500 chars.
+LLM-judge suites are optional. They add judge-model cost and should be audited for bias.
+LLM-judge parsing clamps detector score to `[0, 1]` and truncates stored `rationale`/raw judge text to 500 chars.
 When secondary judge auditing is enabled, each LLM-judge detector checkpoint record adds:
 - `secondary_score`, `secondary_hit`, `secondary_confidence`, `secondary_rationale`
 - `score_delta` (absolute primary-secondary score gap)
