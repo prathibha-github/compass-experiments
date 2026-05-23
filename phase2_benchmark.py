@@ -406,7 +406,7 @@ def _generate_summary(checkpoint_file: Path, summary_file: Path) -> None:
     logger.info(f"✓ Summary saved: {summary_file}")
 
 
-def main():
+def main(argv: Optional[List[str]] = None):
     parser = argparse.ArgumentParser(
         description="Constitutional Compliance Benchmark Runner",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -469,7 +469,7 @@ Examples:
         help="Resume from checkpoint (load latest results)",
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     run_benchmark(
         models=args.models,
