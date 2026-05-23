@@ -27,25 +27,22 @@ Dependency direction is one-way: this repo imports from compass. Compass never i
 - CLI and config (`main.py`, `config.py`)
 - Experiment-specific one-off code
 
-## Planned refactor
+## Compass migration (complete)
 
-The following migration is planned but not yet done. Do not start it without reading the compass CLAUDE.md first.
+Both migration sessions are done. Do not re-run them.
 
-**Phase (Session 1 — happens in compass first):**
-- compass gets upgraded clients with retry/throttle/pricing
-- compass gets `compass/detectors/` module with TicSuite framework + builtin suites
+**Session 1 (compass):** upgraded clients with retry/throttle/pricing; added `compass/detectors/` with TicSuite framework and builtin suites.
 
-**Phase (Session 2 — happens here):**
-- `helm_eval_lex_quirks/models/` clients replaced with compass clients
-  - `AnthropicClient` → `compass.clients.AnthropicClient`
-  - `OpenAIClient` → `compass.clients.OpenAIClient`
-  - `GeminiClient` → `compass.clients.GoogleAIClient`
-  - `OllamaClient` → `compass.clients.OllamaClient`
-  - `OpenAIResponsesClient` → `compass.clients.OpenAIResponsesClient`
-- Duplicated rubric text in `builtin_tic_suites.py` replaced with `compass.RubricLibrary` references
-- `wilson_interval` in `metrics/tic_suite.py` replaced with `compass.judges.reliability.wilson_interval`
-- `LLMJudgeDetector` JSON parsing upgraded to use `compass.judges.parsing.parse_judge_response`
-- `helm_eval_lex_quirks` adds `compass-eval` to its dependencies
+**Session 2 (this repo):**
+- `helm_eval_lex_quirks/models/` clients are now thin adapters over compass clients
+  - `AnthropicClient` wraps `compass.clients.AnthropicClient`
+  - `OpenAIClient` wraps `compass.clients.OpenAIClient` (adds logprob pass-through for ECE)
+  - `GeminiClient` wraps `compass.clients.GoogleAIClient` (adds safety_settings=BLOCK_NONE and max_requests guard)
+  - `OllamaClient` wraps `compass.clients.OllamaClient`
+  - `OpenAIResponsesClient` wraps `compass.clients.OpenAIResponsesClient`
+- `metrics/tic_suite.py` is a pure re-export shim from `compass.detectors`
+- Rubric text in `builtin_tic_suites.py` uses `compass.RubricLibrary` references
+- `compass-eval` is in `requirements.txt`
 
 ## Adding a new benchmark
 
