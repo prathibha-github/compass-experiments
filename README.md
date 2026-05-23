@@ -16,6 +16,8 @@ The harness supports:
 
 These detectors are trend-analysis tools, not definitive classifiers. Tone and formatting indicators can be appropriate in context; compare across models, versions, prompts, and conditions rather than treating a single hit as conclusive.
 
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the repo layout and execution flow.
+
 ## Setup
 
 ```bash
