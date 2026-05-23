@@ -2,6 +2,9 @@
 
 Small evaluation harness for measuring model behavior on public API outputs.
 
+This repo is the execution layer. Shared clients, rubrics, detector primitives,
+and reusable suites live in `compass`.
+
 The harness supports:
 
 - HELM-style benchmark slices for accuracy, calibration, and typo robustness.
@@ -9,7 +12,7 @@ The harness supports:
 - LinkedIn-style emoji and phrase prevalence.
 - Built-in tic suites for lexical, punctuation, formatting, and tone indicators.
 - Persona-transfer analysis: whether persona/style system prompts increase tic prevalence on the same neutral tasks.
-- OpenAI and Claude model clients.
+- Thin adapters over Compass clients for OpenAI, Anthropic, Gemini, and Ollama.
 
 These detectors are trend-analysis tools, not definitive classifiers. Tone and formatting indicators can be appropriate in context; compare across models, versions, prompts, and conditions rather than treating a single hit as conclusive.
 
@@ -21,6 +24,9 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+`requirements.txt` installs `compass-eval` from the sibling `../compass`
+checkout, so both repos should be present locally.
 
 Set API keys through the environment:
 
@@ -222,3 +228,10 @@ Pairwise ranking supports `--pairwise-method count|bradley_terry`, segmentation 
 - Record the exact model names and run timestamp; public model aliases can change.
 - Prefer comparing deltas across conditions/models over interpreting raw detector hits.
 - Increase `--request-interval` if you hit rate limits.
+
+## Extending The Harness
+
+Reusable eval primitives belong in `compass` first. If you want to add a new
+detector or suite that should be shared, define it there and then consume it
+from this repo. Keep repo-local changes here limited to orchestration, scenario
+loading, reporting, and one-off experiments.

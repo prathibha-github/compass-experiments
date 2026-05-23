@@ -17,7 +17,7 @@ Dependency direction is one-way: this repo imports from compass. Compass never i
 - Rubric definitions (`RubricLibrary`)
 - LLM judges, evaluation cache, checkpoint manager
 - Client abstractions (AnthropicClient, OpenAIClient, GoogleAIClient, OllamaClient, OpenAIResponsesClient)
-- TicSuite framework and builtin suite definitions (planned, see below)
+- TicSuite framework and builtin suite definitions
 - Pairwise ranking, judge reliability auditing
 
 **This repo owns:**
