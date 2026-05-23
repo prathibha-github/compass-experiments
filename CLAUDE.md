@@ -42,7 +42,7 @@ Both migration sessions are done. Do not re-run them.
   - `OpenAIResponsesClient` wraps `compass.clients.OpenAIResponsesClient`
 - `metrics/tic_suite.py` is a pure re-export shim from `compass.detectors`
 - Rubric text in `builtin_tic_suites.py` uses `compass.RubricLibrary` references
-- `compass-eval` is in `requirements.txt`
+- `requirements.txt` expects a sibling `../compass` checkout; `requirements-base.txt` contains only the non-compass dependencies
 
 ## Adding a new benchmark
 

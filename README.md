@@ -27,8 +27,15 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-`requirements.txt` installs `compass-eval` from the sibling `../compass`
-checkout, so both repos should be present locally.
+`requirements.txt` expects a sibling `../compass` checkout. `setup.sh` enforces
+the same layout.
+
+If you only want the public dependencies without the private `compass` install
+step, use:
+
+```bash
+pip install -r requirements-base.txt
+```
 
 Set API keys through the environment:
 
