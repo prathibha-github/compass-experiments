@@ -1,8 +1,10 @@
 """Generic tic/style evaluation primitives."""
-import json
 import re
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Iterable, List, Optional
+
+from compass.judges.parsing import parse_judge_response as _compass_parse
+from compass.judges.reliability import wilson_interval as _compass_wilson_interval
 
 
 @dataclass(frozen=True)
@@ -141,10 +143,7 @@ class LLMJudgeDetector(TicDetector):
     def parse_response(self, raw: str) -> DetectorResult:
         # Keep score bounded to [0, 1] so downstream aggregation remains
         # comparable across judge prompts/models and robust to malformed output.
-        try:
-            payload = json.loads(raw)
-        except json.JSONDecodeError:
-            payload = self._extract_json_object(raw)
+        payload = _compass_parse(raw)
 
         if payload is None:
             return DetectorResult(
@@ -176,14 +175,7 @@ class LLMJudgeDetector(TicDetector):
 
     @staticmethod
     def _extract_json_object(raw: str) -> Optional[dict]:
-        start = raw.find("{")
-        end = raw.rfind("}")
-        if start < 0 or end <= start:
-            return None
-        try:
-            return json.loads(raw[start:end + 1])
-        except json.JSONDecodeError:
-            return None
+        return _compass_parse(raw)
 
 
 EMOJI_PATTERN = re.compile(
@@ -248,7 +240,6 @@ class CharacterCountDetector(TicDetector):
 
 RecordExtras = Callable[[str, Dict[str, DetectorResult]], Dict[str, object]]
 LOW_SAMPLE_THRESHOLD = 30
-WILSON_Z_95 = 1.96
 
 
 @dataclass(frozen=True)
@@ -312,19 +303,14 @@ def analyze_text(
     return results
 
 
-def wilson_interval(hit_count: int, n_outputs: int, z: float = WILSON_Z_95) -> Dict[str, float]:
-    """Return a Wilson score interval as percentages."""
+def wilson_interval(hit_count: int, n_outputs: int) -> Dict[str, float]:
+    """Return a Wilson score interval as percentages (delegating to compass)."""
     if n_outputs <= 0:
         return {"low": 0.0, "high": 0.0}
-
-    p_hat = hit_count / n_outputs
-    z2 = z * z
-    denom = 1 + z2 / n_outputs
-    center = (p_hat + z2 / (2 * n_outputs)) / denom
-    margin = z * ((p_hat * (1 - p_hat) + z2 / (4 * n_outputs)) / n_outputs) ** 0.5 / denom
+    low, high = _compass_wilson_interval(hit_count, n_outputs)
     return {
-        "low": round(100 * max(0.0, center - margin), 1),
-        "high": round(100 * min(1.0, center + margin), 1),
+        "low": round(100 * low, 1),
+        "high": round(100 * high, 1),
     }
 
 
