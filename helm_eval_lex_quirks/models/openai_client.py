@@ -1,3 +1,4 @@
+import time
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -52,14 +53,58 @@ class OpenAIClient:
         top_logprobs: int = 20,
         system: str = "You are a helpful assistant.",
     ) -> ModelResponse:
-        # logprobs not forwarded; compass OpenAIClient does not expose them
-        resp = self._inner.complete(
-            prompt=prompt, max_tokens=max_tokens, temperature=temperature, system=system
+        if not logprobs:
+            resp = self._inner.complete(
+                prompt=prompt, max_tokens=max_tokens, temperature=temperature, system=system
+            )
+            tokens = resp.tokens_used or {}
+            return ModelResponse(
+                completion=resp.completion,
+                logprobs=None,
+                input_tokens=tokens.get("input", 0),
+                output_tokens=tokens.get("output", 0),
+            )
+
+        # Logprob path: access compass's underlying openai.OpenAI client directly so
+        # ECE calibration (runner.py) gets real token probabilities. Reuse compass's
+        # throttle and token counters so total_tokens / total_cost_usd stay accurate.
+        self._inner._throttle()
+        self._inner._last_call_at = time.monotonic()
+
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
+        actual_temperature = (
+            1.0 if (self.model.startswith("gpt-5") or self.model.startswith("o4"))
+            else temperature
         )
-        tokens = resp.tokens_used or {}
+
+        resp = self._inner.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            max_completion_tokens=max_tokens,
+            temperature=actual_temperature,
+            logprobs=True,
+            top_logprobs=top_logprobs,
+        )
+
+        completion = resp.choices[0].message.content or ""
+        raw_logprobs = None
+        choice_lp = resp.choices[0].logprobs
+        if choice_lp and choice_lp.content:
+            raw_logprobs = choice_lp.content[0].top_logprobs
+
+        usage = resp.usage
+        input_tokens = usage.prompt_tokens if usage else 0
+        output_tokens = usage.completion_tokens if usage else 0
+        self._inner._input_tokens += input_tokens
+        self._inner._output_tokens += output_tokens
+
         return ModelResponse(
-            completion=resp.completion,
-            logprobs=None,
-            input_tokens=tokens.get("input", 0),
-            output_tokens=tokens.get("output", 0),
+            completion=completion,
+            logprobs=raw_logprobs,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
