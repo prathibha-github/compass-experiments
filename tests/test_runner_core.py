@@ -493,5 +493,54 @@ class RunnerCoreTests(unittest.TestCase):
         self.assertEqual(by_prompt[1], {0, 2, 3})
 
 
+    def test_gemini_self_harm_safety_tokens_aggregated(self):
+        """Safety-off client tokens and cost are merged into the final result.
+
+        _run_tic_suite is mocked so this test focuses purely on the token/cost
+        aggregation in _run_model, not on suite execution (which would require a
+        judge model and real LLM calls).
+        """
+        import tempfile
+
+        class _Client:
+            def __init__(self, tokens, cost):
+                self._tokens = tokens
+                self._cost = cost
+
+            @property
+            def total_tokens(self):
+                return dict(self._tokens)
+
+            @property
+            def total_cost_usd(self):
+                return self._cost
+
+        default_client = _Client({"input": 10, "output": 5}, 0.01)
+        safety_client  = _Client({"input": 20, "output": 8}, 0.02)
+
+        created = iter([default_client, safety_client])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg = self._config(
+                output_dir=tmpdir,
+                style_only=True,
+                style_suites=["self_harm_safety"],
+                models=["gemini-2.0-flash"],
+                google_api_key="fake-key",
+            )
+            runner = EvalRunner(cfg)
+
+            # create_client is called twice: once for the main client in run(), once
+            # for the safety-off client inside _run_model for self_harm_safety.
+            # _run_tic_suite is stubbed out so we don't need a real judge model.
+            with patch("helm_eval_lex_quirks.runner.create_client", side_effect=created), \
+                 patch.object(EvalRunner, "_run_tic_suite", return_value={}):
+                results = runner.run()
+
+        result = results["gemini-2.0-flash"]
+        self.assertEqual(result.token_usage, {"input": 30, "output": 13})
+        self.assertAlmostEqual(result.total_cost_usd, 0.03)
+
+
 if __name__ == "__main__":
     unittest.main()
