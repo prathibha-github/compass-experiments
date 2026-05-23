@@ -19,10 +19,14 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: |
+            requirements.txt
+            requirements-base.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest
+        run: |
+          pip install "compass-eval[openai,anthropic,google] @ git+https://x-access-token:${{ secrets.COMPASS_PAT }}@github.com/prathibha-github/compass.git@main"
+          pip install -r requirements-base.txt pytest
 
       - name: Run CLI smoke tests
         run: pytest tests/test_cli_entrypoints.py -q
@@ -40,10 +44,14 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: |
+            requirements.txt
+            requirements-base.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest
+        run: |
+          pip install "compass-eval[openai,anthropic,google] @ git+https://x-access-token:${{ secrets.COMPASS_PAT }}@github.com/prathibha-github/compass.git@main"
+          pip install -r requirements-base.txt pytest
 
       - name: Run tests
         run: pytest tests/ -q
