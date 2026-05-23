@@ -8,11 +8,12 @@ PARENT_DIR="$(dirname "$SCRIPT_DIR")"
 python3 -m venv "$SCRIPT_DIR/.venv"
 source "$SCRIPT_DIR/.venv/bin/activate"
 pip install --upgrade pip -q
-pip install -r "$SCRIPT_DIR/requirements.txt" -q
-
-if [ -d "$PARENT_DIR/compass" ]; then
-  pip install -e "$PARENT_DIR/compass" --no-deps -q
+if [ ! -d "$PARENT_DIR/compass" ]; then
+  echo "Expected sibling compass checkout at $PARENT_DIR/compass" >&2
+  exit 1
 fi
+pip install -r "$SCRIPT_DIR/requirements-base.txt" -q
+pip install -e "$PARENT_DIR/compass" --no-deps -q
 
 # Let the venv find the helm_eval_lex_quirks package
 PY_VER=$(.venv/bin/python3 -c "import sys; print(f'python{sys.version_info.major}.{sys.version_info.minor}')")
