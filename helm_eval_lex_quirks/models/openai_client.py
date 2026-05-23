@@ -1,3 +1,4 @@
+import logging
 import time
 from dataclasses import dataclass
 from typing import List, Optional
@@ -5,6 +6,8 @@ from typing import List, Optional
 from compass.clients.openai import OpenAIClient as _CompassOpenAIClient
 
 from helm_eval_lex_quirks.config import model_config
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -65,12 +68,10 @@ class OpenAIClient:
                 output_tokens=tokens.get("output", 0),
             )
 
-        # Logprob path: access compass's underlying openai.OpenAI client directly so
+        # Logprob path: call compass's underlying openai.OpenAI client directly so
         # ECE calibration (runner.py) gets real token probabilities. Reuse compass's
-        # throttle and token counters so total_tokens / total_cost_usd stay accurate.
-        self._inner._throttle()
-        self._inner._last_call_at = time.monotonic()
-
+        # throttle, token counters, quota-header adaptation, and retry helpers so this
+        # path is as reliable as the normal compass inference path.
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
@@ -81,7 +82,7 @@ class OpenAIClient:
             else temperature
         )
 
-        resp = self._inner.client.chat.completions.create(
+        kwargs = dict(
             model=self.model,
             messages=messages,
             max_completion_tokens=max_tokens,
@@ -90,21 +91,59 @@ class OpenAIClient:
             top_logprobs=top_logprobs,
         )
 
-        completion = resp.choices[0].message.content or ""
-        raw_logprobs = None
-        choice_lp = resp.choices[0].logprobs
-        if choice_lp and choice_lp.content:
-            raw_logprobs = choice_lp.content[0].top_logprobs
+        _openai = self._inner._openai
+        max_attempts = 10
+        for attempt in range(max_attempts):
+            self._inner._throttle()
+            self._inner._last_call_at = time.monotonic()
+            try:
+                raw = self._inner.client.chat.completions.with_raw_response.create(**kwargs)
+                resp = raw.parse()
+                headers = dict(raw.headers)
 
-        usage = resp.usage
-        input_tokens = usage.prompt_tokens if usage else 0
-        output_tokens = usage.completion_tokens if usage else 0
-        self._inner._input_tokens += input_tokens
-        self._inner._output_tokens += output_tokens
+                completion = resp.choices[0].message.content or ""
+                raw_logprobs = None
+                choice_lp = resp.choices[0].logprobs
+                if choice_lp and choice_lp.content:
+                    raw_logprobs = choice_lp.content[0].top_logprobs
 
-        return ModelResponse(
-            completion=completion,
-            logprobs=raw_logprobs,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-        )
+                usage = resp.usage
+                input_tokens = usage.prompt_tokens if usage else 0
+                output_tokens = usage.completion_tokens if usage else 0
+                self._inner._input_tokens += input_tokens
+                self._inner._output_tokens += output_tokens
+
+                self._inner._adapt_from_success_headers(headers)
+
+                return ModelResponse(
+                    completion=completion,
+                    logprobs=raw_logprobs,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                )
+
+            except _openai.RateLimitError as exc:
+                headers_429: dict = {}
+                if hasattr(exc, "response") and exc.response is not None:
+                    headers_429 = dict(exc.response.headers)
+                wait = self._inner._wait_from_429_headers(headers_429, attempt)
+                logger.warning(
+                    "Rate limit on logprob call (attempt %d/%d) — waiting %.0fs",
+                    attempt + 1, max_attempts, wait,
+                )
+                time.sleep(wait)
+
+            except _openai.APIError as exc:
+                status = getattr(exc, "status_code", None)
+                if status is not None and 400 <= status < 500:
+                    raise RuntimeError(
+                        f"OpenAI logprob call failed for {self.model}: {exc}"
+                    ) from exc
+                logger.error("OpenAI API error on logprob attempt %d: %s", attempt + 1, exc)
+                if attempt == max_attempts - 1:
+                    raise RuntimeError(
+                        f"OpenAI logprob call failed for {self.model}: {exc}"
+                    ) from exc
+                time.sleep(min(4 * (2 ** attempt), 30))
+
+        raise RuntimeError(f"OpenAI logprob call failed after {max_attempts} attempts")

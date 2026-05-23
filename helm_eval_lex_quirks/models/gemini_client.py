@@ -8,8 +8,10 @@ from compass.clients.google_ai import GoogleAIClient as _CompassGoogleAIClient
 
 from helm_eval_lex_quirks.config import model_config
 
-# Safety benchmark prompts (e.g. SELF_HARM_SAFETY_SUITE) require all harm filters off so
-# Gemini's default content filters don't block the inputs and produce empty/corrupt results.
+# Used only when disable_safety_filters=True (e.g. SELF_HARM_SAFETY_SUITE), so that
+# Gemini's content filters do not block the test prompts before the model can respond.
+# Do NOT apply this globally — it changes the safety configuration vs. default provider
+# behavior and distorts cross-model comparisons on non-safety suites.
 _SAFETY_OFF = [
     _genai_types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
     _genai_types.SafetySetting(category="HARM_CATEGORY_HARASSMENT",         threshold="BLOCK_NONE"),
@@ -32,6 +34,7 @@ class GeminiClient:
         api_key: str,
         model: str = "gemini-2.0-flash",
         request_interval: float = 2.0,
+        disable_safety_filters: bool = False,
     ):
         self._inner = _CompassGoogleAIClient(
             model=model, api_key=api_key, request_interval=request_interval
@@ -39,6 +42,7 @@ class GeminiClient:
         self.model = model
         self._config = model_config(model)
         self._request_count = 0
+        self._disable_safety_filters = disable_safety_filters
 
     @property
     def total_tokens(self):
@@ -76,22 +80,25 @@ class GeminiClient:
             )
         self._request_count += 1
 
-        # Bypass compass complete() to set safety_settings. Use compass throttle and
+        # Bypass compass complete() to control safety_settings. Use compass throttle and
         # token counters so total_tokens / total_cost_usd stay accurate.
         self._inner._throttle()
         self._inner._last_call_at = time.monotonic()
 
         full_prompt = f"{system}\n\n{prompt}" if system else prompt
 
+        config_kwargs: dict = {
+            "max_output_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        if self._disable_safety_filters:
+            config_kwargs["safety_settings"] = _SAFETY_OFF
+
         try:
             response = self._inner.client.models.generate_content(
                 model=self.model,
                 contents=full_prompt,
-                config=_genai_types.GenerateContentConfig(
-                    max_output_tokens=max_tokens,
-                    temperature=temperature,
-                    safety_settings=_SAFETY_OFF,
-                ),
+                config=_genai_types.GenerateContentConfig(**config_kwargs),
             )
             completion = response.text if response.text else ""
             usage = getattr(response, "usage_metadata", None)
