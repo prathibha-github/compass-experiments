@@ -54,7 +54,10 @@ class ModelFactoryTests(unittest.TestCase):
         with patch("helm_eval_lex_quirks.models.GeminiClient", return_value="gemini") as patched:
             out = create_client(cfg, "gemini-2.0-flash")
         self.assertEqual(out, "gemini")
-        patched.assert_called_once_with("fake-google-key", "gemini-2.0-flash", cfg.request_interval)
+        patched.assert_called_once_with(
+            "fake-google-key", "gemini-2.0-flash", cfg.request_interval,
+            disable_safety_filters=False,
+        )
 
 
 if __name__ == "__main__":

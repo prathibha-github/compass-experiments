@@ -29,6 +29,7 @@ from helm_eval_lex_quirks.metrics.tic_suite import (
     LLM_JUDGE_SYSTEM_PROMPT,
 )
 from helm_eval_lex_quirks.models.anthropic_client import AnthropicClient
+from helm_eval_lex_quirks.models.gemini_client import GeminiClient
 from helm_eval_lex_quirks.models.ollama_client import OllamaClient
 from helm_eval_lex_quirks.models.openai_client import OpenAIClient
 
@@ -61,12 +62,12 @@ class BenchmarkResult:
         return asdict(self)
 
 
-def create_client(model: str) -> Tuple[object, str]:
+def create_client(model: str, disable_safety_filters: bool = False) -> Tuple[object, str]:
     """
     Create appropriate client for model.
 
     Returns:
-        (client, client_type) where client_type is 'ollama', 'openai', or 'anthropic'
+        (client, client_type) where client_type is 'ollama', 'openai', 'anthropic', or 'gemini'
     """
     # Local models via Ollama
     ollama_models = {"llama3.1", "mistral", "phi", "llama3", "llama3.2"}
@@ -75,7 +76,15 @@ def create_client(model: str) -> Tuple[object, str]:
         return OllamaClient(model=model_name), "ollama"
 
     # Cloud models
-    if "gpt" in model.lower():
+    if "gemini" in model.lower():
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            raise ValueError("GOOGLE_API_KEY not set")
+        return GeminiClient(
+            api_key=api_key, model=model,
+            disable_safety_filters=disable_safety_filters,
+        ), "gemini"
+    elif "gpt" in model.lower():
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("OPENAI_API_KEY not set")
@@ -226,7 +235,10 @@ def run_benchmark(
             logger.info(f"\n  Model: {model}")
 
             try:
-                client, client_type = create_client(model)
+                client, client_type = create_client(
+                    model,
+                    disable_safety_filters=(suite_name == "self_harm_safety"),
+                )
                 logger.info(f"    Client type: {client_type}")
             except Exception as e:
                 logger.error(f"    Failed to create client: {e}")

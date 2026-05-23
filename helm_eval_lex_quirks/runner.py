@@ -8,7 +8,7 @@ from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
-from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, model_config
+from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, model_config, model_provider
 from helm_eval_lex_quirks.metrics.accuracy import extract_mc_answer, multiple_choice_accuracy
 from helm_eval_lex_quirks.metrics.calibration import compute_ece, extract_choice_probs
 from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY
@@ -220,14 +220,28 @@ class EvalRunner:
             logger.info("  Quirk detection...")
             result.quirk_results = self._run_quirk_detection(client)
 
+        # One-off safety-off Gemini client, created lazily and reused if self_harm_safety
+        # appears in the suite list. Kept separate so its tokens can be merged below.
+        safety_client: Optional[CompletionClient] = None
+
         for suite_key, suite, samples in self._enabled_tic_suites():
             logger.info("  Style suite: %s", suite_key)
+            # SELF_HARM_SAFETY_SUITE sends adversarial prompts that Gemini's default
+            # content filters would block. Use a safety-off client so the model's own
+            # refusal behavior is measured, not the provider's pre-filter.
+            suite_client = client
+            if suite_key == "self_harm_safety" and model_provider(model_name) == "google":
+                if safety_client is None:
+                    safety_client = create_client(
+                        self.config, model_name, disable_safety_filters=True
+                    )
+                suite_client = safety_client
             if suite_key == "linkedin":
-                suite_result = self._run_linkedin_style(client, model_name, samples=samples)
+                suite_result = self._run_linkedin_style(suite_client, model_name, samples=samples)
                 result.linkedin_results = suite_result
             else:
                 suite_result = self._run_tic_suite(
-                    client=client,
+                    client=suite_client,
                     model_name=model_name,
                     suite=suite,
                     samples=samples,
@@ -245,8 +259,15 @@ class EvalRunner:
                 suites_by_name,
             )
 
-        result.token_usage    = client.total_tokens
-        result.total_cost_usd = client.total_cost_usd
+        # Merge tokens and cost from the safety-off client (if used) into the totals.
+        tokens = dict(client.total_tokens)
+        cost = client.total_cost_usd
+        if safety_client is not None:
+            for k, v in safety_client.total_tokens.items():
+                tokens[k] = tokens.get(k, 0) + v
+            cost += safety_client.total_cost_usd
+        result.token_usage    = tokens
+        result.total_cost_usd = cost
         return result
 
     def _eval_scenario(
