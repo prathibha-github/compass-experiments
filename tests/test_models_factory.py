@@ -59,6 +59,16 @@ class ModelFactoryTests(unittest.TestCase):
             disable_safety_filters=False,
         )
 
+    def test_create_client_routes_gemini_model_with_safety_override(self):
+        cfg = self._config(google_api_key="fake-google-key")
+        with patch("helm_eval_lex_quirks.models.GeminiClient", return_value="gemini") as patched:
+            out = create_client(cfg, "gemini-2.0-flash", disable_safety_filters=True)
+        self.assertEqual(out, "gemini")
+        patched.assert_called_once_with(
+            "fake-google-key", "gemini-2.0-flash", cfg.request_interval,
+            disable_safety_filters=True,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
