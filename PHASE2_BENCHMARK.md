@@ -155,6 +155,9 @@ but can collapse older sample-level runs together.
 
 ## Architecture
 
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the broader repo layout and the
+boundary between this runner and `compass`.
+
 ### Benchmark Runner (`phase2_benchmark.py`)
 - Creates separate **judge client** (for scoring) and **eval client** (for generating outputs)
 - Writes results immediately (not buffered), enabling resume mid-run
@@ -312,13 +315,3 @@ Optional advanced example:
 # Runs suite inspection + runnable benchmark commands
 python examples/custom_constitutional_eval.py
 ```
-
-If you also install Compass, you can uncomment additional examples in
-`custom_constitutional_eval.py` for rubric-level judge workflows.
-
-## Next Steps
-
-- [ ] Run benchmark on target models (gpt-4o, claude-opus, llama3.1, etc.)
-- [ ] Compare results across models and conditions
-- [ ] Publish findings + methodology
-- [ ] Evaluate whether to add Compass as an optional dependency
