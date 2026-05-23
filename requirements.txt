@@ -7,5 +7,4 @@ scipy>=1.10.0
 tqdm>=4.65.0
 PyYAML>=6.0.0
 ollama>=0.1.0
-# compass-eval: install from local source: pip install -e /path/to/compass
--e ../compass
+compass-eval[openai,anthropic,google] @ git+https://github.com/prathibha-github/compass.git@main
