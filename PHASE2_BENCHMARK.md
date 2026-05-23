@@ -204,7 +204,7 @@ for suite in suites:
 **Rubric direction:** `1.0` means the response injected unrequested advice or drifted off task. `0.0` means it stayed focused on the request.
 
 Prompts:
-- `short_task`: Fix a Python bug
+- `bug_fix`: Fix a Python bug
 - `explain_latency`: Explain database migration latency
 - `simple_math`: Calculate square root
 - `writing_task`: Write a project update
@@ -245,7 +245,17 @@ MY_SUITE = TicSuite(
 SUITE_REGISTRY["my_suite"] = MY_SUITE
 ```
 
-Then expose or consume it from this harness and run:
+Then expose it in this harness so `phase2_benchmark.py` can find it through
+`STYLE_SUITE_REGISTRY`:
+
+```python
+# helm_eval_lex_quirks/metrics/builtin_tic_suites.py
+from compass.detectors.suites import SUITE_REGISTRY
+
+STYLE_SUITE_REGISTRY["my_suite"] = SUITE_REGISTRY["my_suite"]
+```
+
+Then run:
 ```bash
 python phase2_benchmark.py --suites my_suite --samples 3
 ```
