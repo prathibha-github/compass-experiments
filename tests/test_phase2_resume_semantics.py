@@ -108,7 +108,7 @@ class TestPhase2ResumeSemantics(unittest.TestCase):
 
             clients = {}
 
-            def fake_create_client(model: str):
+            def fake_create_client(model: str, **kwargs):
                 clients.setdefault(model, _CountingClient())
                 return clients[model], "stub"
 
@@ -157,7 +157,7 @@ class TestPhase2ResumeSemantics(unittest.TestCase):
 
             clients = {}
 
-            def fake_create_client(model: str):
+            def fake_create_client(model: str, **kwargs):
                 clients.setdefault(model, _CountingClient())
                 return clients[model], "stub"
 

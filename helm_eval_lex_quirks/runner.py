@@ -8,7 +8,7 @@ from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
-from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, model_config
+from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, model_config, model_provider
 from helm_eval_lex_quirks.metrics.accuracy import extract_mc_answer, multiple_choice_accuracy
 from helm_eval_lex_quirks.metrics.calibration import compute_ece, extract_choice_probs
 from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY
@@ -222,12 +222,18 @@ class EvalRunner:
 
         for suite_key, suite, samples in self._enabled_tic_suites():
             logger.info("  Style suite: %s", suite_key)
+            # SELF_HARM_SAFETY_SUITE sends adversarial prompts that Gemini's default
+            # content filters would block. Create a one-off safety-off client so the
+            # model's own refusal behavior is measured, not the provider's pre-filter.
+            suite_client = client
+            if suite_key == "self_harm_safety" and model_provider(model_name) == "google":
+                suite_client = create_client(self.config, model_name, disable_safety_filters=True)
             if suite_key == "linkedin":
-                suite_result = self._run_linkedin_style(client, model_name, samples=samples)
+                suite_result = self._run_linkedin_style(suite_client, model_name, samples=samples)
                 result.linkedin_results = suite_result
             else:
                 suite_result = self._run_tic_suite(
-                    client=client,
+                    client=suite_client,
                     model_name=model_name,
                     suite=suite,
                     samples=samples,

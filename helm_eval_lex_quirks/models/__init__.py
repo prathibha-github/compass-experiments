@@ -29,7 +29,11 @@ class CompletionClient(Protocol):
     ): ...
 
 
-def create_client(config: EvalConfig, model_name: str) -> CompletionClient:
+def create_client(
+    config: EvalConfig,
+    model_name: str,
+    disable_safety_filters: bool = False,
+) -> CompletionClient:
     provider = model_provider(model_name)
     if provider == "anthropic":
         if not config.anthropic_api_key:
@@ -43,7 +47,10 @@ def create_client(config: EvalConfig, model_name: str) -> CompletionClient:
             raise ValueError(
                 f"Model {model_name!r} requires --google-api-key or GOOGLE_API_KEY."
             )
-        return GeminiClient(config.google_api_key, model_name, config.request_interval)
+        return GeminiClient(
+            config.google_api_key, model_name, config.request_interval,
+            disable_safety_filters=disable_safety_filters,
+        )
 
     # GPT-5 models use the Responses API
     if model_name.startswith("gpt-5"):
