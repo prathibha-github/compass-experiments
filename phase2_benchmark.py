@@ -27,6 +27,7 @@ from helm_eval_lex_quirks.metrics.builtin_tic_suites import (
 from helm_eval_lex_quirks.metrics.tic_suite import (
     LLMJudgeDetector,
     LLM_JUDGE_SYSTEM_PROMPT,
+    wilson_interval,
 )
 from helm_eval_lex_quirks.models.anthropic_client import AnthropicClient
 from helm_eval_lex_quirks.models.gemini_client import GeminiClient
@@ -167,7 +168,7 @@ def run_benchmark(
     models: List[str],
     judge_model: str,
     suites: List[str],
-    samples_per_condition: int = 5,
+    samples_per_condition: int = 20,
     output_dir: str = "results/benchmark",
     resume: bool = False,
 ) -> None:
@@ -389,15 +390,17 @@ def _generate_summary(checkpoint_file: Path, summary_file: Path) -> None:
         f.write(f"Generated: {datetime.now().isoformat()}\n")
         f.write(f"Checkpoint: {checkpoint_file}\n\n")
 
-        f.write("Model | Suite | Detector | Hit Rate | Mean Score | Samples\n")
-        f.write("-" * 90 + "\n")
+        f.write("Model | Suite | Detector | Hit Rate | 95% CI (Wilson) | Mean Score | Samples\n")
+        f.write("-" * 110 + "\n")
 
         for key in sorted(summary.keys()):
             stats = summary[key]
             hit_rate = 100 * stats["hits"] / stats["total"] if stats["total"] > 0 else 0
             mean_score = sum(stats["scores"]) / len(stats["scores"]) if stats["scores"] else 0
+            ci = wilson_interval(stats["hits"], stats["total"])
             f.write(
-                f"{key} | {hit_rate:5.1f}% | {mean_score:6.3f} | {stats['total']:3d}\n"
+                f"{key} | {hit_rate:5.1f}% | [{ci['low']:5.1f}%, {ci['high']:5.1f}%] | "
+                f"{mean_score:6.3f} | {stats['total']:3d}\n"
             )
 
         f.write("\n" + "=" * 90 + "\n")
@@ -453,8 +456,8 @@ Examples:
     parser.add_argument(
         "--samples",
         type=int,
-        default=5,
-        help="Samples per condition (default: 5)",
+        default=20,
+        help="Samples per condition (default: 20)",
     )
 
     parser.add_argument(
