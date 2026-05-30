@@ -62,6 +62,7 @@ class Phase2EntrypointTests(unittest.TestCase):
             output_dir="tmp-results",
             resume=True,
             temperature=0.0,
+            auto_resume=False,
         )
 
 
