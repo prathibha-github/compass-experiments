@@ -220,14 +220,13 @@ The constitutional-compliance suites run through `phase2_benchmark.py`. For samp
 python phase2_benchmark.py \
   --suites rest_cai_validation \
   --models claude-opus-4-7 \
-  --judge-model claude-opus-4-7 \
   --temperature 1.0 \
   --samples 5 \
   --output-dir results/benchmark_pilot \
   --auto-resume
 ```
 
-`--auto-resume` continues from an existing checkpoint in `--output-dir` instead of discarding it, so re-running the same command never re-pays for completed cells. Keep the same `--output-dir` and `--auto-resume` when scaling to more models or `--samples 20`. See `PHASE2_BENCHMARK.md` for the full set of suites and options.
+`rest_cai_validation` uses only heuristic detectors, so no LLM judge runs and `--judge-model` can be omitted; the runner skips building a judge client for heuristic-only runs. `--auto-resume` continues from an existing checkpoint in `--output-dir` instead of discarding it, so re-running the same command never re-pays for completed cells. Keep the same `--output-dir` and `--auto-resume` when scaling to more models or `--samples 20`. See `PHASE2_BENCHMARK.md` for the full set of suites and options.
 
 ## Outputs
 

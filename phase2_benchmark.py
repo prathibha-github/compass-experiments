@@ -221,14 +221,27 @@ def run_benchmark(
     logger.info(f"  Checkpoint: {checkpoint_file}")
     logger.info(f"  Mode: {'RESUME' if resume else 'NEW RUN'}")
 
-    # Load judge client once (shared across all evaluations)
-    logger.info(f"\nInitializing judge client: {judge_model}")
-    try:
-        judge_client, judge_type = create_client(judge_model)
-        logger.info(f"  Judge type: {judge_type}")
-    except Exception as e:
-        logger.error(f"Failed to create judge client: {e}")
-        sys.exit(1)
+    # A judge client is only needed when a selected suite has an LLM-judge detector.
+    # Heuristic-only runs (e.g. rest_cai_validation) skip it, so --judge-model is not
+    # required and no judge API key has to be set just to start the run.
+    needs_judge = any(
+        isinstance(detector, LLMJudgeDetector)
+        for suite_name in suites
+        if suite_name in STYLE_SUITE_REGISTRY
+        for detector in STYLE_SUITE_REGISTRY[suite_name].detectors
+    )
+
+    judge_client = None
+    if needs_judge:
+        logger.info(f"\nInitializing judge client: {judge_model}")
+        try:
+            judge_client, judge_type = create_client(judge_model)
+            logger.info(f"  Judge type: {judge_type}")
+        except Exception as e:
+            logger.error(f"Failed to create judge client: {e}")
+            sys.exit(1)
+    else:
+        logger.info("\nNo LLM-judge detectors in selected suites; skipping judge client.")
 
     # Start fresh when not resuming so prior runs do not contaminate results.
     if not resume and checkpoint_file.exists():
