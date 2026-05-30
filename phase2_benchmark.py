@@ -171,6 +171,8 @@ def run_benchmark(
     samples_per_condition: int = 20,
     output_dir: str = "results/benchmark",
     resume: bool = False,
+    temperature: float = 0.0,
+    auto_resume: bool = False,
 ) -> None:
     """
     Run benchmark evaluation.
@@ -182,6 +184,15 @@ def run_benchmark(
         samples_per_condition: Samples per condition per suite
         output_dir: Where to save results
         resume: Whether to load and continue from latest checkpoint
+        temperature: Sampling temperature for the model under test. Keep 0.0 for
+            deterministic suites; raise above 0.0 for suites whose per-condition
+            samples are meant to be independent draws (e.g. rest_cai_validation),
+            otherwise repeated samples are near-identical and the reported
+            confidence intervals understate uncertainty. The judge stays at 0.0.
+        auto_resume: When True, continue from an existing non-empty checkpoint in
+            output_dir instead of discarding it. Avoids re-paying for completed
+            evaluations when a prior run is already present. No effect when resume
+            is already True, or when no checkpoint exists yet.
     """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -189,6 +200,19 @@ def run_benchmark(
 
     # Use fixed checkpoint filename for resume capability
     checkpoint_file = output_path / "benchmark.jsonl"
+
+    # Auto-resume promotes an explicit-resume when a prior run is already present,
+    # so a forgotten --resume does not wipe (and force re-paying for) completed work.
+    if auto_resume and not resume and checkpoint_file.exists():
+        with open(checkpoint_file) as f:
+            prior = sum(1 for line in f if line.strip())
+        if prior:
+            resume = True
+            logger.info(
+                "  Auto-resume: found %d prior evaluations in %s; continuing instead of resetting",
+                prior,
+                checkpoint_file,
+            )
 
     logger.info("Benchmark Runner")
     logger.info(f"  Models to evaluate: {', '.join(models)}")
@@ -275,7 +299,7 @@ def run_benchmark(
                             response = client.complete(
                                 prompt=prompt.text,
                                 max_tokens=256,
-                                temperature=0.0,
+                                temperature=temperature,
                                 system=condition.system_prompt,
                             )
 
@@ -461,6 +485,18 @@ Examples:
     )
 
     parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.0,
+        help=(
+            "Sampling temperature for the model under test (default: 0.0, "
+            "deterministic). Raise above 0.0 for suites whose per-condition samples "
+            "should be independent draws (e.g. rest_cai_validation); at 0.0 repeated "
+            "samples are near-identical and confidence intervals understate uncertainty."
+        ),
+    )
+
+    parser.add_argument(
         "--output-dir",
         default="results/benchmark",
         help="Output directory (default: results/benchmark)",
@@ -472,6 +508,17 @@ Examples:
         help="Resume from checkpoint (load latest results)",
     )
 
+    parser.add_argument(
+        "--auto-resume",
+        action="store_true",
+        help=(
+            "Continue from an existing non-empty checkpoint in --output-dir instead "
+            "of discarding it. Use this to safely re-invoke the same command without "
+            "re-paying for completed evaluations. No effect if --resume is given or "
+            "no checkpoint exists."
+        ),
+    )
+
     args = parser.parse_args(argv)
 
     run_benchmark(
@@ -481,6 +528,8 @@ Examples:
         samples_per_condition=args.samples,
         output_dir=args.output_dir,
         resume=args.resume,
+        temperature=args.temperature,
+        auto_resume=args.auto_resume,
     )
 
 
