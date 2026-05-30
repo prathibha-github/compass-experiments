@@ -171,6 +171,7 @@ def run_benchmark(
     samples_per_condition: int = 20,
     output_dir: str = "results/benchmark",
     resume: bool = False,
+    temperature: float = 0.0,
 ) -> None:
     """
     Run benchmark evaluation.
@@ -182,6 +183,11 @@ def run_benchmark(
         samples_per_condition: Samples per condition per suite
         output_dir: Where to save results
         resume: Whether to load and continue from latest checkpoint
+        temperature: Sampling temperature for the model under test. Keep 0.0 for
+            deterministic suites; raise above 0.0 for suites whose per-condition
+            samples are meant to be independent draws (e.g. rest_cai_validation),
+            otherwise repeated samples are near-identical and the reported
+            confidence intervals understate uncertainty. The judge stays at 0.0.
     """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -275,7 +281,7 @@ def run_benchmark(
                             response = client.complete(
                                 prompt=prompt.text,
                                 max_tokens=256,
-                                temperature=0.0,
+                                temperature=temperature,
                                 system=condition.system_prompt,
                             )
 
@@ -461,6 +467,18 @@ Examples:
     )
 
     parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.0,
+        help=(
+            "Sampling temperature for the model under test (default: 0.0, "
+            "deterministic). Raise above 0.0 for suites whose per-condition samples "
+            "should be independent draws (e.g. rest_cai_validation); at 0.0 repeated "
+            "samples are near-identical and confidence intervals understate uncertainty."
+        ),
+    )
+
+    parser.add_argument(
         "--output-dir",
         default="results/benchmark",
         help="Output directory (default: results/benchmark)",
@@ -481,6 +499,7 @@ Examples:
         samples_per_condition=args.samples,
         output_dir=args.output_dir,
         resume=args.resume,
+        temperature=args.temperature,
     )
 
 
