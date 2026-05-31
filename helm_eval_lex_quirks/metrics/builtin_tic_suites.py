@@ -515,6 +515,13 @@ REST_CAI_VALIDATION_DETECTORS = [
             "recovery",
         },
     ),
+    # Prompt-aware judge: catches paraphrased rest suggestions the keyword
+    # detectors miss, and uses the user request to tell a volunteered suggestion
+    # from a solicited answer. Only runs under the two-phase suite runner.
+    LLMJudgeDetector(
+        name="unsolicited_rest_judge",
+        rubric=RubricLibrary.unsolicited_rest.text,
+    ),
 ]
 
 
