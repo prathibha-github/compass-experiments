@@ -15,18 +15,19 @@ import argparse
 import json
 import logging
 import os
-import sys
-from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
+from compass import (
+    evaluate_suite_completions,
+    generate_suite_completions,
+)
 from helm_eval_lex_quirks.metrics.builtin_tic_suites import (
     STYLE_SUITE_REGISTRY,
 )
 from helm_eval_lex_quirks.metrics.tic_suite import (
     LLMJudgeDetector,
-    LLM_JUDGE_SYSTEM_PROMPT,
     wilson_interval,
 )
 from helm_eval_lex_quirks.models.anthropic_client import AnthropicClient
@@ -39,28 +40,6 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class BenchmarkResult:
-    """Single evaluation result."""
-
-    model: str
-    suite: str
-    detector: str
-    prompt_id: str
-    condition: str
-    sample_idx: int
-    score: float
-    hit: bool
-    confidence: Optional[float] = None
-    rationale: str = ""
-    input_tokens: int = 0
-    output_tokens: int = 0
-
-    def to_dict(self) -> dict:
-        """Convert to dict for JSON serialization."""
-        return asdict(self)
 
 
 def create_client(model: str, disable_safety_filters: bool = False) -> Tuple[object, str]:
@@ -175,273 +154,126 @@ def run_benchmark(
     auto_resume: bool = False,
 ) -> None:
     """
-    Run benchmark evaluation.
+    Run the two-phase suite benchmark.
+
+    Generation and scoring are decoupled: each suite's completions are generated
+    once per (model, prompt, condition, sample) and persisted, then scored with
+    the suite's detectors. Re-running scoring (for example with a different judge)
+    does not regenerate. LLM-judge detectors are prompt-aware: the judge sees the
+    user request, so it can tell a volunteered suggestion from a solicited answer.
 
     Args:
-        models: List of model names to evaluate
-        judge_model: Model to use for LLM-based rubrics
-        suites: List of suite names to run
-        samples_per_condition: Samples per condition per suite
-        output_dir: Where to save results
-        resume: Whether to load and continue from latest checkpoint
+        models: Models under test.
+        judge_model: Judge model for LLM-judge detectors (ignored by heuristic-only suites).
+        suites: Suite names to run.
+        samples_per_condition: Completions per (prompt, condition) cell.
+        output_dir: Root directory; each suite writes under output_dir/<suite>.
+        resume: Continue from persisted generations instead of regenerating.
         temperature: Sampling temperature for the model under test. Keep 0.0 for
             deterministic suites; raise above 0.0 for suites whose per-condition
-            samples are meant to be independent draws (e.g. rest_cai_validation),
-            otherwise repeated samples are near-identical and the reported
-            confidence intervals understate uncertainty. The judge stays at 0.0.
-        auto_resume: When True, continue from an existing non-empty checkpoint in
-            output_dir instead of discarding it. Avoids re-paying for completed
-            evaluations when a prior run is already present. No effect when resume
-            is already True, or when no checkpoint exists yet.
+            samples are meant to be independent draws (e.g. rest_cai_validation).
+            The judge stays deterministic.
+        auto_resume: Alias for resume kept for CLI compatibility; either flag
+            preserves existing completions rather than discarding them.
     """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    # Use fixed checkpoint filename for resume capability
-    checkpoint_file = output_path / "benchmark.jsonl"
-
-    # Auto-resume promotes an explicit-resume when a prior run is already present,
-    # so a forgotten --resume does not wipe (and force re-paying for) completed work.
-    if auto_resume and not resume and checkpoint_file.exists():
-        with open(checkpoint_file) as f:
-            prior = sum(1 for line in f if line.strip())
-        if prior:
-            resume = True
-            logger.info(
-                "  Auto-resume: found %d prior evaluations in %s; continuing instead of resetting",
-                prior,
-                checkpoint_file,
-            )
+    keep_generations = resume or auto_resume
 
     logger.info("Benchmark Runner")
-    logger.info(f"  Models to evaluate: {', '.join(models)}")
-    logger.info(f"  Judge model: {judge_model}")
+    logger.info(f"  Models: {', '.join(models)}")
     logger.info(f"  Suites: {', '.join(suites)}")
-    logger.info(f"  Checkpoint: {checkpoint_file}")
-    logger.info(f"  Mode: {'RESUME' if resume else 'NEW RUN'}")
-
-    # A judge client is only needed when a selected suite has an LLM-judge detector.
-    # Heuristic-only runs (e.g. rest_cai_validation) skip it, so --judge-model is not
-    # required and no judge API key has to be set just to start the run.
-    needs_judge = any(
-        isinstance(detector, LLMJudgeDetector)
-        for suite_name in suites
-        if suite_name in STYLE_SUITE_REGISTRY
-        for detector in STYLE_SUITE_REGISTRY[suite_name].detectors
+    logger.info(
+        f"  Samples/condition: {samples_per_condition}  temperature: {temperature}"
     )
+    logger.info(f"  Mode: {'RESUME generations' if keep_generations else 'NEW RUN'}")
 
-    judge_client = None
-    if needs_judge:
-        logger.info(f"\nInitializing judge client: {judge_model}")
-        try:
-            judge_client, judge_type = create_client(judge_model)
-            logger.info(f"  Judge type: {judge_type}")
-        except Exception as e:
-            logger.error(f"Failed to create judge client: {e}")
-            sys.exit(1)
-    else:
-        logger.info("\nNo LLM-judge detectors in selected suites; skipping judge client.")
-
-    # Start fresh when not resuming so prior runs do not contaminate results.
-    if not resume and checkpoint_file.exists():
-        with open(checkpoint_file) as f:
-            discarded = sum(1 for line in f if line.strip())
-        logger.warning(
-            "  Resetting existing checkpoint for new run; discarding %d prior evaluations",
-            discarded,
-        )
-        checkpoint_file.write_text("")
-
-    # Load checkpoint if resuming
-    completed = load_checkpoint(checkpoint_file) if resume else set()
-    logger.info(f"Checkpoint has {len(completed)} completed evaluations")
-
-    results_written = 0
-
+    eval_paths: Dict[str, Path] = {}
     for suite_name in suites:
         if suite_name not in STYLE_SUITE_REGISTRY:
             logger.error(f"Unknown suite: {suite_name}")
             continue
 
         suite = STYLE_SUITE_REGISTRY[suite_name]
+        suite_dir = output_path / suite_name
+
+        def client_factory(model: str, _suite_name: str = suite_name):
+            client, _ = create_client(
+                model, disable_safety_filters=(_suite_name == "self_harm_safety")
+            )
+            return client
+
         logger.info(f"\n{'=' * 70}")
         logger.info(f"Suite: {suite_name} ({len(suite.detectors)} detectors)")
         logger.info(f"{'=' * 70}")
 
-        for model in models:
-            logger.info(f"\n  Model: {model}")
+        generations_path = generate_suite_completions(
+            suite,
+            models=models,
+            samples=samples_per_condition,
+            output_dir=suite_dir,
+            temperature=temperature,
+            resume=keep_generations,
+            client_factory=client_factory,
+        )
 
-            try:
-                client, client_type = create_client(
-                    model,
-                    disable_safety_filters=(suite_name == "self_harm_safety"),
-                )
-                logger.info(f"    Client type: {client_type}")
-            except Exception as e:
-                logger.error(f"    Failed to create client: {e}")
-                continue
+        needs_judge = any(
+            isinstance(detector, LLMJudgeDetector) for detector in suite.detectors
+        )
+        eval_paths[suite_name] = evaluate_suite_completions(
+            suite,
+            generations_path,
+            suite_dir,
+            judge_model=judge_model if needs_judge else None,
+            resume=True,
+            client_factory=client_factory,
+        )
 
-            # Iterate through prompts and conditions
-            for prompt in suite.prompts:
-                for condition in suite.conditions:
-                    for sample_idx in range(samples_per_condition):
-                        # Check if all detectors for this sample are already completed
-                        all_detectors_done = all(
-                            (
-                                model,
-                                suite_name,
-                                d.name,
-                                prompt.id,
-                                condition.name,
-                                sample_idx,
-                            )
-                            in completed
-                            for d in suite.detectors
-                        )
-
-                        if all_detectors_done:
-                            logger.debug(
-                                f"    Skipping (all detectors completed): "
-                                f"{prompt.id} [{condition.name}] sample {sample_idx + 1}"
-                            )
-                            continue
-
-                        try:
-                            # Generate completion
-                            response = client.complete(
-                                prompt=prompt.text,
-                                max_tokens=256,
-                                temperature=temperature,
-                                system=condition.system_prompt,
-                            )
-
-                            # Run detectors
-                            for detector in suite.detectors:
-                                try:
-                                    if isinstance(detector, LLMJudgeDetector):
-                                        # Create judge function with strict system prompt
-                                        def judge_fn(prompt_text: str, max_tokens: int) -> str:
-                                            judge_response = judge_client.complete(
-                                                prompt=prompt_text,
-                                                max_tokens=max_tokens,
-                                                temperature=0.0,
-                                                system=LLM_JUDGE_SYSTEM_PROMPT,
-                                            )
-                                            return judge_response.completion
-
-                                        detector_result = detector.detect_with_judge(
-                                            text=response.completion,
-                                            judge_fn=judge_fn,
-                                        )
-                                    else:
-                                        # Regular heuristic detectors
-                                        detector_result = detector.detect(
-                                            text=response.completion
-                                        )
-
-                                    # Extract metadata
-                                    confidence = detector_result.metadata.get("confidence")
-                                    rationale = detector_result.metadata.get("rationale", "")
-
-                                    # Create result
-                                    bench_result = BenchmarkResult(
-                                        model=model,
-                                        suite=suite_name,
-                                        detector=detector.name,
-                                        prompt_id=prompt.id,
-                                        condition=condition.name,
-                                        sample_idx=sample_idx,
-                                        score=detector_result.score,
-                                        hit=detector_result.hit,
-                                        confidence=confidence,
-                                        rationale=rationale,
-                                        input_tokens=response.input_tokens,
-                                        output_tokens=response.output_tokens,
-                                    )
-
-                                    # Write to checkpoint immediately
-                                    with open(checkpoint_file, "a") as f:
-                                        f.write(json.dumps(bench_result.to_dict()) + "\n")
-                                    results_written += 1
-                                    completed.add(
-                                        (
-                                            model,
-                                            suite_name,
-                                            detector.name,
-                                            prompt.id,
-                                            condition.name,
-                                            sample_idx,
-                                        )
-                                    )
-
-                                except Exception as e:
-                                    logger.error(
-                                        f"    Detector {detector.name} failed for "
-                                        f"{prompt.id} [{condition.name}]: {e}"
-                                    )
-                                    continue
-
-                            logger.info(
-                                f"    [{suite_name:20}] {prompt.id:15} "
-                                f"[{condition.name:12}] sample {sample_idx + 1}/{samples_per_condition}"
-                            )
-
-                        except Exception as e:
-                            logger.error(
-                                f"    Failed to evaluate {prompt.id} "
-                                f"[{condition.name}] sample {sample_idx + 1}: {e}"
-                            )
-                            continue
-
-    logger.info(f"\n{'=' * 70}")
-    logger.info(f"✓ Benchmark complete")
-    logger.info(f"  Results written: {results_written}")
-    logger.info(f"  Checkpoint: {checkpoint_file}")
-
-    # Generate summary
-    _generate_summary(checkpoint_file, output_path / f"benchmark_summary_{timestamp}.txt")
+    summary_file = output_path / f"benchmark_summary_{timestamp}.txt"
+    _write_summary(eval_paths, summary_file)
+    logger.info(f"✓ Benchmark complete; summary: {summary_file}")
 
 
-def _generate_summary(checkpoint_file: Path, summary_file: Path) -> None:
-    """Generate human-readable summary from checkpoint."""
+def _write_summary(eval_paths: Dict[str, Path], summary_file: Path) -> None:
+    """Aggregate per-(model, condition, detector) hit rates with Wilson CIs.
+
+    Breaking the summary down by model is what makes the cross-model comparison
+    (e.g. opus vs sonnet vs haiku) readable directly from one table.
+    """
     from collections import defaultdict
 
-    summary = defaultdict(lambda: {"hits": 0, "total": 0, "scores": []})
-
-    with open(checkpoint_file) as f:
-        for line in f:
-            if not line.strip():
-                continue
-            try:
-                result = json.loads(line)
-                key = f"{result['model']} | {result['suite']} | {result['detector']}"
-                summary[key]["hits"] += int(result["hit"])
-                summary[key]["total"] += 1
-                summary[key]["scores"].append(result["score"])
-            except json.JSONDecodeError:
-                continue
+    agg: Dict[tuple, Dict[str, int]] = defaultdict(lambda: {"hits": 0, "total": 0})
+    for path in eval_paths.values():
+        with open(path) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                key = (row["model"], row["suite"], row["condition"], row["detector"])
+                agg[key]["hits"] += int(bool(row.get("hit")))
+                agg[key]["total"] += 1
 
     with open(summary_file, "w") as f:
         f.write("Constitutional Compliance Benchmark Summary\n")
-        f.write(f"Generated: {datetime.now().isoformat()}\n")
-        f.write(f"Checkpoint: {checkpoint_file}\n\n")
-
-        f.write("Model | Suite | Detector | Hit Rate | 95% CI (Wilson) | Mean Score | Samples\n")
+        f.write(f"Generated: {datetime.now().isoformat()}\n\n")
+        f.write("Model | Suite | Condition | Detector | Hit Rate | 95% CI (Wilson) | n\n")
         f.write("-" * 110 + "\n")
-
-        for key in sorted(summary.keys()):
-            stats = summary[key]
-            hit_rate = 100 * stats["hits"] / stats["total"] if stats["total"] > 0 else 0
-            mean_score = sum(stats["scores"]) / len(stats["scores"]) if stats["scores"] else 0
-            ci = wilson_interval(stats["hits"], stats["total"])
+        for key in sorted(agg):
+            model, suite_name, condition, detector = key
+            stats = agg[key]
+            total = stats["total"]
+            pct = 100 * stats["hits"] / total if total else 0.0
+            ci = wilson_interval(stats["hits"], total)
             f.write(
-                f"{key} | {hit_rate:5.1f}% | [{ci['low']:5.1f}%, {ci['high']:5.1f}%] | "
-                f"{mean_score:6.3f} | {stats['total']:3d}\n"
+                f"{model} | {suite_name} | {condition} | {detector} | "
+                f"{pct:5.1f}% | [{ci['low']:5.1f}%, {ci['high']:5.1f}%] | {total:3d}\n"
             )
-
         f.write("\n" + "=" * 90 + "\n")
-        f.write(f"Total evaluations: {sum(s['total'] for s in summary.values())}\n")
+        f.write(f"Total evaluations: {sum(s['total'] for s in agg.values())}\n")
 
     logger.info(f"✓ Summary saved: {summary_file}")
 
