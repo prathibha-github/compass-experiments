@@ -20,6 +20,30 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the repo layout and execution flow.
 
 ## Setup
 
+### Fresh machine
+
+There is nothing to compile; compass is pure Python and installs via pip. It is
+consumed as an editable sibling checkout, so clone both repos into the same
+parent directory and keep compass on `main` (the two-phase suite runner used by
+`phase2_benchmark.py` lives there).
+
+```bash
+mkdir -p ~/dev_setup && cd ~/dev_setup
+git clone git@github.com:prathibha-github/compass.git
+git clone git@github.com:prathibha-github/helm-eval-lex-quirks.git
+cd ~/dev_setup/compass && git checkout main && git pull
+cd ~/dev_setup/helm-eval-lex-quirks && ./setup.sh
+```
+
+`setup.sh` creates `.venv`, installs `requirements-base.txt`, and installs compass
+editable (`pip install -e ../compass --no-deps`). Confirm the wiring:
+
+```bash
+.venv/bin/python -c "from compass import generate_suite_completions; print('compass two-phase OK')"
+```
+
+### Existing checkout
+
 ```bash
 cd ~/dev_setup/helm_eval_lex_quirks
 python -m venv .venv
