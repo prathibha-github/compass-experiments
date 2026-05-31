@@ -1,4 +1,4 @@
-"""Regression tests for phase2 benchmark checkpoint semantics."""
+"""Regression tests for phase2 benchmark, now backed by the two-phase suite runner."""
 import json
 import tempfile
 import unittest
@@ -42,16 +42,17 @@ class _CountingClient:
         )
 
 
-class TestPhase2ResumeSemantics(unittest.TestCase):
-    def _stub_suite(self) -> TicSuite:
-        return TicSuite(
-            name="stub_suite",
-            prompts=[StylePrompt(id="prompt_1", text="hello")],
-            conditions=[StyleCondition(name="neutral", system_prompt="Be direct.")],
-            detectors=[_StubDetector()],
-            baseline_condition="neutral",
-        )
+def _stub_suite() -> TicSuite:
+    return TicSuite(
+        name="stub_suite",
+        prompts=[StylePrompt(id="prompt_1", text="hello")],
+        conditions=[StyleCondition(name="neutral", system_prompt="Be direct.")],
+        detectors=[_StubDetector()],
+        baseline_condition="neutral",
+    )
 
+
+class LoadCheckpointTests(unittest.TestCase):
     def test_load_checkpoint_parses_sample_idx_and_legacy_default(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint_path = Path(tmpdir) / "benchmark.jsonl"
@@ -59,130 +60,84 @@ class TestPhase2ResumeSemantics(unittest.TestCase):
                 f.write(
                     json.dumps(
                         {
-                            "model": "m",
-                            "suite": "s",
-                            "detector": "d",
-                            "prompt_id": "p",
-                            "condition": "c",
-                            "sample_idx": 2,
+                            "model": "m", "suite": "s", "detector": "d",
+                            "prompt_id": "p", "condition": "c", "sample_idx": 2,
                         }
-                    )
-                    + "\n"
+                    ) + "\n"
                 )
                 f.write(
                     json.dumps(
                         {
-                            "model": "m",
-                            "suite": "s",
-                            "detector": "d",
-                            "prompt_id": "p",
-                            "condition": "c",
+                            "model": "m", "suite": "s", "detector": "d",
+                            "prompt_id": "p", "condition": "c",
                         }
-                    )
-                    + "\n"
+                    ) + "\n"
                 )
 
             completed = phase2_benchmark.load_checkpoint(checkpoint_path)
             self.assertIn(("m", "s", "d", "p", "c", 2), completed)
             self.assertIn(("m", "s", "d", "p", "c", 0), completed)
 
-    def test_resume_uses_sample_level_identity(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            checkpoint_path = Path(tmpdir) / "benchmark.jsonl"
-            with open(checkpoint_path, "w") as f:
-                f.write(
-                    json.dumps(
-                        {
-                            "model": "model-a",
-                            "suite": "stub_suite",
-                            "detector": "stub_detector",
-                            "prompt_id": "prompt_1",
-                            "condition": "neutral",
-                            "sample_idx": 0,
-                            "score": 1.0,
-                            "hit": True,
-                        }
-                    )
-                    + "\n"
-                )
 
-            clients = {}
+class TwoPhaseRunTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.out = self.tmp.name
+        self.clients = {}
 
-            def fake_create_client(model: str, **kwargs):
-                clients.setdefault(model, _CountingClient())
-                return clients[model], "stub"
+    def tearDown(self):
+        self.tmp.cleanup()
 
-            suite = self._stub_suite()
-            with patch.object(
-                phase2_benchmark, "STYLE_SUITE_REGISTRY", {"stub_suite": suite}
-            ), patch.object(
-                phase2_benchmark, "create_client", side_effect=fake_create_client
-            ), patch.object(
-                phase2_benchmark, "_generate_summary", return_value=None
-            ):
-                phase2_benchmark.run_benchmark(
-                    models=["model-a"],
-                    judge_model="judge-a",
-                    suites=["stub_suite"],
-                    samples_per_condition=2,
-                    output_dir=tmpdir,
-                    resume=True,
-                )
+    def _fake_create_client(self, model: str, **kwargs):
+        self.clients.setdefault(model, _CountingClient())
+        return self.clients[model], "stub"
 
-            self.assertEqual(clients["model-a"].call_count, 1)
-            with open(checkpoint_path) as f:
-                rows = [json.loads(line) for line in f if line.strip()]
-            sample_idxs = sorted(row["sample_idx"] for row in rows)
-            self.assertEqual(sample_idxs, [0, 1])
+    def _run(self, **overrides):
+        kwargs = dict(
+            models=["model-a"],
+            judge_model="judge-a",
+            suites=["stub_suite"],
+            samples_per_condition=2,
+            output_dir=self.out,
+        )
+        kwargs.update(overrides)
+        with patch.object(
+            phase2_benchmark, "STYLE_SUITE_REGISTRY", {"stub_suite": _stub_suite()}
+        ), patch.object(
+            phase2_benchmark, "create_client", side_effect=self._fake_create_client
+        ):
+            phase2_benchmark.run_benchmark(**kwargs)
 
-    def test_new_run_truncates_existing_checkpoint(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            checkpoint_path = Path(tmpdir) / "benchmark.jsonl"
-            with open(checkpoint_path, "w") as f:
-                f.write(
-                    json.dumps(
-                        {
-                            "model": "legacy-model",
-                            "suite": "legacy-suite",
-                            "detector": "legacy-detector",
-                            "prompt_id": "legacy",
-                            "condition": "neutral",
-                            "sample_idx": 99,
-                            "score": 0.0,
-                            "hit": False,
-                        }
-                    )
-                    + "\n"
-                )
+    def test_two_phase_persists_generations_and_scores(self):
+        self._run()
+        suite_dir = Path(self.out) / "stub_suite"
+        gens = [
+            json.loads(l)
+            for l in open(suite_dir / "suite_generations.jsonl")
+            if l.strip()
+        ]
+        # 1 prompt x 1 condition x 2 samples
+        self.assertEqual(len(gens), 2)
+        self.assertTrue(all("completion" in g for g in gens))
+        self.assertEqual(self.clients["model-a"].call_count, 2)
 
-            clients = {}
+        # Heuristic-only suite -> evaluations tagged "heuristic", one row per sample.
+        eval_rows = [
+            json.loads(l)
+            for l in open(suite_dir / "suite_evaluations_heuristic.jsonl")
+            if l.strip()
+        ]
+        self.assertEqual(len(eval_rows), 2)
+        self.assertTrue(all(r["hit"] for r in eval_rows))
 
-            def fake_create_client(model: str, **kwargs):
-                clients.setdefault(model, _CountingClient())
-                return clients[model], "stub"
+        # A summary file is written at the output root.
+        self.assertTrue(list(Path(self.out).glob("benchmark_summary_*.txt")))
 
-            suite = self._stub_suite()
-            with patch.object(
-                phase2_benchmark, "STYLE_SUITE_REGISTRY", {"stub_suite": suite}
-            ), patch.object(
-                phase2_benchmark, "create_client", side_effect=fake_create_client
-            ), patch.object(
-                phase2_benchmark, "_generate_summary", return_value=None
-            ):
-                phase2_benchmark.run_benchmark(
-                    models=["model-a"],
-                    judge_model="judge-a",
-                    suites=["stub_suite"],
-                    samples_per_condition=1,
-                    output_dir=tmpdir,
-                    resume=False,
-                )
-
-            with open(checkpoint_path) as f:
-                rows = [json.loads(line) for line in f if line.strip()]
-            self.assertEqual(len(rows), 1)
-            self.assertEqual(rows[0]["model"], "model-a")
-            self.assertEqual(rows[0]["sample_idx"], 0)
+    def test_resume_does_not_regenerate(self):
+        self._run()
+        before = self.clients["model-a"].call_count
+        self._run(resume=True)
+        self.assertEqual(self.clients["model-a"].call_count, before)
 
 
 if __name__ == "__main__":
