@@ -143,6 +143,76 @@ def find_latest_checkpoint(output_dir: Path) -> Optional[Path]:
     return checkpoints[0]
 
 
+def _dry_run_plan(
+    models: List[str],
+    suites: List[str],
+    samples_per_condition: int,
+    judge_model: str,
+    temperature: float,
+) -> None:
+    """Log the run plan and API-call exposure without calling any model.
+
+    Reports generation and judge call counts per suite plus a rough cost
+    estimate, so a real run's spend is visible before it starts.
+    """
+    from helm_eval_lex_quirks.config import model_config
+
+    logger.info("DRY RUN — no API calls will be made")
+    logger.info(
+        f"  Models: {', '.join(models)} | judge: {judge_model} | temperature: {temperature}"
+    )
+
+    total_gen = 0
+    total_judge = 0
+    for suite_name in suites:
+        if suite_name not in STYLE_SUITE_REGISTRY:
+            logger.error(f"  Unknown suite: {suite_name}")
+            continue
+        suite = STYLE_SUITE_REGISTRY[suite_name]
+        n_prompts = len(suite.prompts)
+        n_conditions = len(suite.conditions)
+        n_judge_detectors = sum(
+            isinstance(d, LLMJudgeDetector) for d in suite.detectors
+        )
+        gen_calls = n_prompts * n_conditions * samples_per_condition * len(models)
+        judge_calls = gen_calls * n_judge_detectors
+        total_gen += gen_calls
+        total_judge += judge_calls
+        logger.info(
+            f"  [{suite_name}] {n_prompts} prompts x {n_conditions} conditions x "
+            f"{samples_per_condition} samples x {len(models)} models = {gen_calls} generations; "
+            f"{n_judge_detectors} judge detector(s) -> {judge_calls} judge calls"
+        )
+        if n_judge_detectors and not judge_model:
+            logger.warning(
+                f"  [{suite_name}] has judge detectors but no --judge-model set"
+            )
+
+    # Rough cost estimate; assumes ~100 in / ~200 out per generation and
+    # ~450 in / ~50 out per judge call. Order of magnitude, not a quote.
+    gen_per_model = total_gen // max(len(models), 1)
+    est = 0.0
+    for model in models:
+        mc = model_config(model)
+        est += gen_per_model * (
+            100 * mc.input_cost_per_million + 200 * mc.output_cost_per_million
+        ) / 1_000_000
+    if judge_model and total_judge:
+        jc = model_config(judge_model)
+        est += total_judge * (
+            450 * jc.input_cost_per_million + 50 * jc.output_cost_per_million
+        ) / 1_000_000
+
+    logger.info(
+        f"  TOTAL API calls: {total_gen} generations + {total_judge} judge = "
+        f"{total_gen + total_judge}"
+    )
+    logger.info(f"  Rough cost estimate: ~${est:.2f} (order of magnitude)")
+    logger.info(
+        "  Set the relevant API keys (e.g. ANTHROPIC_API_KEY) before the real run."
+    )
+
+
 def run_benchmark(
     models: List[str],
     judge_model: str,
@@ -152,6 +222,7 @@ def run_benchmark(
     resume: bool = False,
     temperature: float = 0.0,
     auto_resume: bool = False,
+    dry_run: bool = False,
 ) -> None:
     """
     Run the two-phase suite benchmark.
@@ -188,6 +259,10 @@ def run_benchmark(
         f"  Samples/condition: {samples_per_condition}  temperature: {temperature}"
     )
     logger.info(f"  Mode: {'RESUME generations' if keep_generations else 'NEW RUN'}")
+
+    if dry_run:
+        _dry_run_plan(models, suites, samples_per_condition, judge_model, temperature)
+        return
 
     eval_paths: Dict[str, Path] = {}
     for suite_name in suites:
@@ -364,6 +439,12 @@ Examples:
         ),
     )
 
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the run plan and API-call exposure, then exit without calling any model.",
+    )
+
     args = parser.parse_args(argv)
 
     run_benchmark(
@@ -375,6 +456,7 @@ Examples:
         resume=args.resume,
         temperature=args.temperature,
         auto_resume=args.auto_resume,
+        dry_run=args.dry_run,
     )
 
 

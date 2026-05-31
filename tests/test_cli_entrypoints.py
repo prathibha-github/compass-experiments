@@ -63,6 +63,7 @@ class Phase2EntrypointTests(unittest.TestCase):
             resume=True,
             temperature=0.0,
             auto_resume=False,
+            dry_run=False,
         )
 
 
