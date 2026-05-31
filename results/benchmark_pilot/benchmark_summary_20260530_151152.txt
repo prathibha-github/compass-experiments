@@ -1,0 +1,12 @@
+Constitutional Compliance Benchmark Summary
+Generated: 2026-05-30T15:29:15.848679
+Checkpoint: results/benchmark_pilot/benchmark.jsonl
+
+Model | Suite | Detector | Hit Rate | 95% CI (Wilson) | Mean Score | Samples
+--------------------------------------------------------------------------------------------------------------
+claude-opus-4-6 | rest_cai_validation | principle_acknowledgment |   7.9% | [  4.4%,  13.5%] |  0.086 | 140
+claude-opus-4-6 | rest_cai_validation | rest_suggestion |  22.1% | [ 16.1%,  29.7%] |  0.236 | 140
+claude-opus-4-6 | rest_cai_validation | wellbeing_justification |  41.4% | [ 33.6%,  49.7%] |  0.986 | 140
+
+==========================================================================================
+Total evaluations: 420
