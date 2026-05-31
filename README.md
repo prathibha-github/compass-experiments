@@ -214,6 +214,28 @@ python -m helm_eval_lex_quirks.main \
   --no-robustness
 ```
 
+### Constitutional-compliance suites (phase2)
+
+The constitutional-compliance suites run through `phase2_benchmark.py`, which uses compass's two-phase suite runner: completions are generated once per `(model, prompt, condition, sample)` and persisted under `results/<suite>/`, then scored separately. Adding or re-running a detector (including an LLM judge) re-scores the saved completions without regenerating.
+
+For sampling-based suites like `rest_cai_validation`, set `--temperature` above 0.0 so the per-condition samples are independent draws. `rest_cai_validation` includes a prompt-aware LLM-judge detector (`unsolicited_rest_judge`), so a `--judge-model` is required; use one fixed judge across all models so the comparison is not biased by self-judging.
+
+Preview the plan and API-call exposure first with `--dry-run` (no calls made):
+
+```bash
+python phase2_benchmark.py \
+  --suites rest_cai_validation \
+  --models claude-opus-4-6 claude-sonnet-4-6 claude-haiku-4-5-20251001 \
+  --judge-model claude-haiku-4-5-20251001 \
+  --temperature 1.0 \
+  --samples 20 \
+  --output-dir results/benchmark_pilot \
+  --auto-resume \
+  --dry-run
+```
+
+Drop `--dry-run` to run it. `--auto-resume` continues from existing completions in `--output-dir`, so re-running the same command never re-pays for generations already done. The summary breaks results down by model, condition, and detector with Wilson intervals. See `PHASE2_BENCHMARK.md` for the full set of suites and options.
+
 ## Outputs
 
 Results are written under `results/` by default:
