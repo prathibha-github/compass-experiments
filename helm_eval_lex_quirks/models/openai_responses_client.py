@@ -23,10 +23,13 @@ class OpenAIResponsesClient:
     ):
         # GPT-5 models reject temperatures other than 1.0 at the API level.
         required_temp = 1.0 if model.startswith("gpt-5") else None
+        # GPT-5 reasoning can consume hidden reasoning tokens before visible output.
+        max_output_token_multiplier = 10 if model.startswith("gpt-5") else 1
         self._inner = _CompassOpenAIResponsesClient(
             model=model,
             api_key=api_key,
             request_interval=request_interval,
+            max_output_token_multiplier=max_output_token_multiplier,
             required_temperature=required_temp,
         )
         self.model = model
