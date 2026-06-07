@@ -21,7 +21,7 @@ class OpenAIResponsesClient:
         model: str = "gpt-5-mini",
         request_interval: float = 2.0,
     ):
-        # GPT-5 models require temperature=1.0 per CLAUDE.md; enforce via required_temperature.
+        # GPT-5 models reject temperatures other than 1.0 at the API level.
         required_temp = 1.0 if model.startswith("gpt-5") else None
         self._inner = _CompassOpenAIResponsesClient(
             model=model,
