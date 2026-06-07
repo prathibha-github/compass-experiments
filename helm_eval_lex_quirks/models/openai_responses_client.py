@@ -21,8 +21,13 @@ class OpenAIResponsesClient:
         model: str = "gpt-5-mini",
         request_interval: float = 2.0,
     ):
+        # GPT-5 models require temperature=1.0 per CLAUDE.md; enforce via required_temperature.
+        required_temp = 1.0 if model.startswith("gpt-5") else None
         self._inner = _CompassOpenAIResponsesClient(
-            model=model, api_key=api_key, request_interval=request_interval
+            model=model,
+            api_key=api_key,
+            request_interval=request_interval,
+            required_temperature=required_temp,
         )
         self.model = model
         self._config = model_config(model)
@@ -48,10 +53,14 @@ class OpenAIResponsesClient:
         prompt: str,
         max_tokens: int = 1,
         temperature: float = 0.0,
-        logprobs: bool = True,
-        top_logprobs: int = 20,
+        logprobs: bool = False,
+        top_logprobs: int = 0,
         system: str = "You are a helpful assistant.",
     ) -> ModelResponse:
+        if logprobs:
+            raise ValueError(
+                f"{self.__class__.__name__} does not support logprobs (Responses API limitation)"
+            )
         resp = self._inner.complete(
             prompt=prompt, max_tokens=max_tokens, temperature=temperature, system=system
         )

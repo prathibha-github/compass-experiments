@@ -34,6 +34,7 @@ from helm_eval_lex_quirks.models.anthropic_client import AnthropicClient
 from helm_eval_lex_quirks.models.gemini_client import GeminiClient
 from helm_eval_lex_quirks.models.ollama_client import OllamaClient
 from helm_eval_lex_quirks.models.openai_client import OpenAIClient
+from helm_eval_lex_quirks.models.openai_responses_client import OpenAIResponsesClient
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,7 +66,6 @@ def create_client(model: str, disable_safety_filters: bool = False) -> Tuple[obj
             disable_safety_filters=disable_safety_filters,
         ), "gemini"
     elif model.startswith("gpt-5"):
-        from helm_eval_lex_quirks.models.openai_responses_client import OpenAIResponsesClient
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("OPENAI_API_KEY not set")
