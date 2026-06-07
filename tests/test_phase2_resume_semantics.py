@@ -120,6 +120,8 @@ class TwoPhaseRunTests(unittest.TestCase):
         # 1 prompt x 1 condition x 2 samples
         self.assertEqual(len(gens), 2)
         self.assertTrue(all("completion" in g for g in gens))
+        self.assertTrue(all(g["max_tokens_requested"] == 150 for g in gens))
+        self.assertTrue(all(g["tokens_used"] == {"input": 1, "output": 1} for g in gens))
         self.assertEqual(self.clients["model-a"].call_count, 2)
 
         # Heuristic-only suite -> evaluations tagged "heuristic", one row per sample.

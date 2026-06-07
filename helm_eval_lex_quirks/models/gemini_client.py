@@ -12,6 +12,12 @@ class ModelResponse:
     logprobs: Optional[List] = None
     input_tokens: int = 0
     output_tokens: int = 0
+    cost_usd: float = 0.0
+    finish_reason: str = ""
+
+    @property
+    def tokens_used(self) -> dict:
+        return {"input": self.input_tokens, "output": self.output_tokens}
 
 
 class GeminiClient:
@@ -70,4 +76,6 @@ class GeminiClient:
             logprobs=resp.logprobs,
             input_tokens=tokens.get("input", 0),
             output_tokens=tokens.get("output", 0),
+            cost_usd=getattr(resp, "cost_usd", 0.0),
+            finish_reason=str(getattr(resp, "finish_reason", "") or ""),
         )

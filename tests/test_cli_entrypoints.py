@@ -63,6 +63,8 @@ class Phase2EntrypointTests(unittest.TestCase):
             resume=True,
             temperature=0.0,
             auto_resume=True,
+            max_tokens_by_model=None,
+            allow_mixed_token_budgets=True,
             dry_run=False,
         )
 
@@ -77,6 +79,25 @@ class Phase2EntrypointTests(unittest.TestCase):
 
         patched.assert_called_once()
         self.assertFalse(patched.call_args.kwargs["auto_resume"])
+
+    def test_phase2_main_routes_token_budget_args(self):
+        with patch("phase2_benchmark.run_benchmark") as patched:
+            phase2_benchmark.main(
+                [
+                    "--models", "claude-opus-4-6", "gpt-5-mini",
+                    "--max-tokens-by-model",
+                    "claude-opus-4-6=200",
+                    "gpt-5-mini=200",
+                    "--disallow-mixed-token-budgets",
+                ]
+            )
+
+        patched.assert_called_once()
+        self.assertEqual(
+            patched.call_args.kwargs["max_tokens_by_model"],
+            {"claude-opus-4-6": 200, "gpt-5-mini": 200},
+        )
+        self.assertFalse(patched.call_args.kwargs["allow_mixed_token_budgets"])
 
 
 if __name__ == "__main__":
