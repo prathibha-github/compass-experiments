@@ -62,9 +62,21 @@ class Phase2EntrypointTests(unittest.TestCase):
             output_dir="tmp-results",
             resume=True,
             temperature=0.0,
-            auto_resume=False,
+            auto_resume=True,
             dry_run=False,
         )
+
+    def test_phase2_main_can_disable_auto_resume(self):
+        with patch("phase2_benchmark.run_benchmark") as patched:
+            phase2_benchmark.main(
+                [
+                    "--models", "llama3.1",
+                    "--no-auto-resume",
+                ]
+            )
+
+        patched.assert_called_once()
+        self.assertFalse(patched.call_args.kwargs["auto_resume"])
 
 
 if __name__ == "__main__":
