@@ -57,10 +57,8 @@ class OpenAIResponsesClient:
         top_logprobs: int = 0,
         system: str = "You are a helpful assistant.",
     ) -> ModelResponse:
-        if logprobs:
-            raise ValueError(
-                f"{self.__class__.__name__} does not support logprobs (Responses API limitation)"
-            )
+        # Responses API does not support logprobs; always returns None.
+        # Callers that rely on logprobs (e.g. ECE) will get coverage=0.
         resp = self._inner.complete(
             prompt=prompt, max_tokens=max_tokens, temperature=temperature, system=system
         )
