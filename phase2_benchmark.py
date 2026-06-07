@@ -23,6 +23,7 @@ from compass import (
     evaluate_suite_completions,
     generate_suite_completions,
 )
+from compass.evaluation import load_suite_generations
 from helm_eval_lex_quirks.metrics.builtin_tic_suites import (
     STYLE_SUITE_REGISTRY,
 )
@@ -227,7 +228,7 @@ def run_benchmark(
     output_dir: str = "results/benchmark",
     resume: bool = False,
     temperature: float = 0.0,
-    auto_resume: bool = False,
+    auto_resume: bool = True,
     dry_run: bool = False,
 ) -> None:
     """
@@ -250,8 +251,9 @@ def run_benchmark(
             deterministic suites; raise above 0.0 for suites whose per-condition
             samples are meant to be independent draws (e.g. rest_cai_validation).
             The judge stays deterministic.
-        auto_resume: Alias for resume kept for CLI compatibility; either flag
-            preserves existing completions rather than discarding them.
+        auto_resume: Preserve existing completions by default so interrupted or
+            repeated runs do not discard paid generations. Disable only for an
+            intentionally fresh run.
     """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -289,6 +291,14 @@ def run_benchmark(
         logger.info(f"Suite: {suite_name} ({len(suite.detectors)} detectors)")
         logger.info(f"{'=' * 70}")
 
+        needs_judge = any(
+            isinstance(detector, LLMJudgeDetector) for detector in suite.detectors
+        )
+        judge_tag = judge_model if needs_judge else "heuristic"
+        evaluations_path = suite_dir / f"suite_evaluations_{judge_tag}.jsonl"
+        checkpoint_path = suite_dir / "suite_generations.jsonl"
+        existing_generations = len(load_suite_generations(checkpoint_path))
+
         generations_path = generate_suite_completions(
             suite,
             models=models,
@@ -299,15 +309,25 @@ def run_benchmark(
             client_factory=client_factory,
         )
 
-        needs_judge = any(
-            isinstance(detector, LLMJudgeDetector) for detector in suite.detectors
-        )
+        resume_evaluations = keep_generations and existing_generations > 0
+        if resume_evaluations and evaluations_path.exists():
+            generations_mtime = generations_path.stat().st_mtime
+            evaluations_mtime = evaluations_path.stat().st_mtime
+            if generations_mtime > evaluations_mtime:
+                resume_evaluations = False
+                logger.info(
+                    "Suite generations are newer than evaluations; stale evaluations "
+                    "will be reset"
+                )
+        elif keep_generations and not resume_evaluations:
+            logger.info("No existing suite generations found; starting fresh")
+
         eval_paths[suite_name] = evaluate_suite_completions(
             suite,
             generations_path,
             suite_dir,
             judge_model=judge_model if needs_judge else None,
-            resume=True,
+            resume=resume_evaluations,
             client_factory=client_factory,
         )
 
@@ -380,6 +400,9 @@ Examples:
 
   # Resume from checkpoint
   python phase2_benchmark.py --models llama3.1 --resume
+
+  # Force a fresh run, discarding existing suite generations/evaluations
+  python phase2_benchmark.py --models llama3.1 --no-auto-resume
         """,
     )
 
@@ -436,12 +459,22 @@ Examples:
 
     parser.add_argument(
         "--auto-resume",
+        dest="auto_resume",
         action="store_true",
+        default=True,
         help=(
-            "Continue from an existing non-empty checkpoint in --output-dir instead "
-            "of discarding it. Use this to safely re-invoke the same command without "
-            "re-paying for completed evaluations. No effect if --resume is given or "
-            "no checkpoint exists."
+            "Continue from existing suite generations/evaluations in --output-dir "
+            "instead of discarding them (default)."
+        ),
+    )
+
+    parser.add_argument(
+        "--no-auto-resume",
+        dest="auto_resume",
+        action="store_false",
+        help=(
+            "Force a fresh run by discarding existing suite generations and "
+            "evaluations for the selected suites."
         ),
     )
 

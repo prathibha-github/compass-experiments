@@ -1,5 +1,6 @@
 """Regression tests for phase2 benchmark, now backed by the two-phase suite runner."""
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -136,8 +137,69 @@ class TwoPhaseRunTests(unittest.TestCase):
     def test_resume_does_not_regenerate(self):
         self._run()
         before = self.clients["model-a"].call_count
+        self._run()
+        self.assertEqual(self.clients["model-a"].call_count, before)
+
+    def test_explicit_resume_does_not_regenerate(self):
+        self._run()
+        before = self.clients["model-a"].call_count
         self._run(resume=True)
         self.assertEqual(self.clients["model-a"].call_count, before)
+
+    def test_new_run_resets_stale_evaluations(self):
+        self._run()
+        self.clients["model-a"].completion_text = "new completion"
+        self._run(auto_resume=False)
+
+        suite_dir = Path(self.out) / "stub_suite"
+        eval_rows = [
+            json.loads(l)
+            for l in open(suite_dir / "suite_evaluations_heuristic.jsonl")
+            if l.strip()
+        ]
+        self.assertEqual(len(eval_rows), 2)
+        self.assertTrue(all(r["completion"] == "new completion" for r in eval_rows))
+
+    def test_empty_generation_checkpoint_resets_stale_evaluations(self):
+        self._run()
+        suite_dir = Path(self.out) / "stub_suite"
+        (suite_dir / "suite_generations.jsonl").write_text("")
+
+        self.clients["model-a"].completion_text = "regenerated"
+        self._run()
+
+        eval_rows = [
+            json.loads(l)
+            for l in open(suite_dir / "suite_evaluations_heuristic.jsonl")
+            if l.strip()
+        ]
+        self.assertEqual(len(eval_rows), 2)
+        self.assertTrue(all(r["completion"] == "regenerated" for r in eval_rows))
+
+    def test_newer_partial_generation_checkpoint_resets_stale_evaluations(self):
+        self._run()
+        suite_dir = Path(self.out) / "stub_suite"
+        generations_path = suite_dir / "suite_generations.jsonl"
+        evaluations_path = suite_dir / "suite_evaluations_heuristic.jsonl"
+
+        first_generation = next(
+            json.loads(l) for l in open(generations_path) if l.strip()
+        )
+        first_generation["completion"] = "partial regenerated"
+        generations_path.write_text(json.dumps(first_generation) + "\n")
+        newer_time = evaluations_path.stat().st_mtime + 10
+        os.utime(generations_path, (newer_time, newer_time))
+
+        self.clients["model-a"].completion_text = "regenerated"
+        self._run()
+
+        eval_rows = [
+            json.loads(l)
+            for l in open(evaluations_path)
+            if l.strip()
+        ]
+        completions = {r["completion"] for r in eval_rows}
+        self.assertEqual(completions, {"partial regenerated", "regenerated"})
 
 
 if __name__ == "__main__":
