@@ -195,16 +195,26 @@ def _parse_max_tokens_by_model(items: Optional[List[str]]) -> Dict[str, int]:
 def _effective_max_tokens_by_model(
     models: List[str],
     max_tokens_by_model: Optional[Dict[str, int]] = None,
+    allow_mixed_token_budgets: bool = True,
 ) -> Dict[str, int]:
     if max_tokens_by_model is None:
-        return {model: _default_suite_max_tokens_for_model(model) for model in models}
-    budgets = {}
-    for model in models:
-        if model not in max_tokens_by_model:
-            raise ValueError(
-                f"Missing max token budget for model {model!r} in custom map."
-            )
-        budgets[model] = int(max_tokens_by_model[model])
+        budgets = {
+            model: _default_suite_max_tokens_for_model(model) for model in models
+        }
+    else:
+        budgets = {}
+        for model in models:
+            if model not in max_tokens_by_model:
+                raise ValueError(
+                    f"Missing max token budget for model {model!r} in custom map."
+                )
+            budgets[model] = int(max_tokens_by_model[model])
+    distinct = sorted(set(budgets.values()))
+    if len(distinct) > 1 and not allow_mixed_token_budgets:
+        raise ValueError(
+            "Mixed max token budgets detected across models: "
+            f"{budgets}. Re-run without --disallow-mixed-token-budgets to override."
+        )
     return budgets
 
 
@@ -215,6 +225,7 @@ def _dry_run_plan(
     judge_model: str,
     temperature: float,
     max_tokens_by_model: Optional[Dict[str, int]] = None,
+    allow_mixed_token_budgets: bool = True,
 ) -> None:
     """Log the run plan and API-call exposure without calling any model.
 
@@ -227,7 +238,11 @@ def _dry_run_plan(
     logger.info(
         f"  Models: {', '.join(models)} | judge: {judge_model} | temperature: {temperature}"
     )
-    effective_budgets = _effective_max_tokens_by_model(models, max_tokens_by_model)
+    effective_budgets = _effective_max_tokens_by_model(
+        models,
+        max_tokens_by_model,
+        allow_mixed_token_budgets=allow_mixed_token_budgets,
+    )
     logger.info(f"  Generation max tokens by model: {effective_budgets}")
 
     total_gen = 0
@@ -329,8 +344,6 @@ def run_benchmark(
         allow_mixed_token_budgets: Allow different generation token budgets
             across models.
     """
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     keep_generations = resume or auto_resume
 
@@ -340,7 +353,11 @@ def run_benchmark(
     logger.info(
         f"  Samples/condition: {samples_per_condition}  temperature: {temperature}"
     )
-    effective_budgets = _effective_max_tokens_by_model(models, max_tokens_by_model)
+    effective_budgets = _effective_max_tokens_by_model(
+        models,
+        max_tokens_by_model,
+        allow_mixed_token_budgets=allow_mixed_token_budgets,
+    )
     logger.info(f"  Generation max tokens by model: {effective_budgets}")
     logger.info(f"  Mode: {'RESUME generations' if keep_generations else 'NEW RUN'}")
 
@@ -352,8 +369,12 @@ def run_benchmark(
             judge_model,
             temperature,
             max_tokens_by_model=effective_budgets,
+            allow_mixed_token_budgets=allow_mixed_token_budgets,
         )
         return
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
 
     eval_paths: Dict[str, Path] = {}
     for suite_name in suites:
