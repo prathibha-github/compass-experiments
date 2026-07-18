@@ -12,9 +12,11 @@ Usage:
     python phase2_benchmark.py --suites task_focus truthfulness --samples 5 --resume
 """
 import argparse
+import inspect
 import json
 import logging
 import os
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -303,6 +305,50 @@ def _dry_run_plan(
     )
 
 
+def _generate_suite_completions_compat(
+    suite,
+    *,
+    models: List[str],
+    samples: int,
+    output_dir: Path,
+    temperature: float,
+    resume: bool,
+    max_tokens_by_model: Dict[str, int],
+    allow_mixed_token_budgets: bool,
+    client_factory,
+) -> Path:
+    """Call Compass suite generation across old and new suite_runner APIs."""
+    generation_params = inspect.signature(generate_suite_completions).parameters
+    if "max_tokens_by_model" in generation_params:
+        return generate_suite_completions(
+            suite,
+            models=models,
+            samples=samples,
+            output_dir=output_dir,
+            temperature=temperature,
+            resume=resume,
+            max_tokens_by_model=max_tokens_by_model,
+            allow_mixed_token_budgets=allow_mixed_token_budgets,
+            client_factory=client_factory,
+        )
+
+    generations_path: Optional[Path] = None
+    for idx, model in enumerate(models):
+        model_suite = replace(suite, max_tokens=max_tokens_by_model[model])
+        generations_path = generate_suite_completions(
+            model_suite,
+            models=[model],
+            samples=samples,
+            output_dir=output_dir,
+            temperature=temperature,
+            resume=resume or idx > 0,
+            client_factory=client_factory,
+        )
+    if generations_path is None:
+        raise ValueError("At least one model is required.")
+    return generations_path
+
+
 def run_benchmark(
     models: List[str],
     judge_model: str,
@@ -403,7 +449,7 @@ def run_benchmark(
         checkpoint_path = suite_dir / "suite_generations.jsonl"
         existing_generations = len(load_suite_generations(checkpoint_path))
 
-        generations_path = generate_suite_completions(
+        generations_path = _generate_suite_completions_compat(
             suite,
             models=models,
             samples=samples_per_condition,

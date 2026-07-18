@@ -203,6 +203,48 @@ class TwoPhaseRunTests(unittest.TestCase):
         completions = {r["completion"] for r in eval_rows}
         self.assertEqual(completions, {"partial regenerated", "regenerated"})
 
+    def test_generation_compat_supports_old_compass_signature(self):
+        calls = []
+
+        def old_generate_suite_completions(
+            suite, models, samples, output_dir, *, temperature=0.0,
+            resume=False, client_factory=None,
+        ):
+            calls.append(
+                {
+                    "models": list(models),
+                    "max_tokens": suite.max_tokens,
+                    "resume": resume,
+                }
+            )
+            return Path(output_dir) / "suite_generations.jsonl"
+
+        with patch.object(
+            phase2_benchmark,
+            "generate_suite_completions",
+            side_effect=old_generate_suite_completions,
+        ):
+            path = phase2_benchmark._generate_suite_completions_compat(
+                _stub_suite(),
+                models=["model-a", "gemini-2.5-flash"],
+                samples=1,
+                output_dir=Path(self.out),
+                temperature=0.0,
+                resume=False,
+                max_tokens_by_model={"model-a": 150, "gemini-2.5-flash": 2000},
+                allow_mixed_token_budgets=True,
+                client_factory=lambda _model: _CountingClient(),
+            )
+
+        self.assertEqual(path, Path(self.out) / "suite_generations.jsonl")
+        self.assertEqual(
+            calls,
+            [
+                {"models": ["model-a"], "max_tokens": 150, "resume": False},
+                {"models": ["gemini-2.5-flash"], "max_tokens": 2000, "resume": True},
+            ],
+        )
+
     def test_dry_run_does_not_create_output_dir(self):
         output_dir = Path(self.out) / "dry_run_output"
 
