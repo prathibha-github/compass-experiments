@@ -245,6 +245,32 @@ class TwoPhaseRunTests(unittest.TestCase):
             ],
         )
 
+    def test_dry_run_does_not_create_output_dir(self):
+        output_dir = Path(self.out) / "dry_run_output"
+
+        phase2_benchmark.run_benchmark(
+            models=["gpt-4o-mini"],
+            judge_model="gpt-4o-mini",
+            suites=["task_focus"],
+            samples_per_condition=1,
+            output_dir=str(output_dir),
+            dry_run=True,
+        )
+
+        self.assertFalse(output_dir.exists())
+
+    def test_dry_run_enforces_mixed_token_budget_gate(self):
+        with self.assertRaisesRegex(ValueError, "Mixed max token budgets"):
+            phase2_benchmark.run_benchmark(
+                models=["gpt-4o-mini", "gemini-2.5-flash"],
+                judge_model="gpt-4o-mini",
+                suites=["task_focus"],
+                samples_per_condition=1,
+                output_dir=str(Path(self.out) / "dry_run_output"),
+                dry_run=True,
+                allow_mixed_token_budgets=False,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
