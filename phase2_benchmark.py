@@ -46,7 +46,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 DEFAULT_SUITE_TOKEN_BUDGETS = {
-    "default": 150,
+    "default": 1000,
     "gemini": 2000,
 }
 

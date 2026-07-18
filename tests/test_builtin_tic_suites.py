@@ -29,6 +29,11 @@ class BuiltinTicSuiteTests(unittest.TestCase):
 
         self.assertEqual(result, ["rest_hypothesis", "rest_cai_validation"])
 
+    def test_expand_suite_names_keeps_mild_insult_suite_explicit(self):
+        result = expand_suite_names(["mild_insult_reactivity"])
+
+        self.assertEqual(result, ["mild_insult_reactivity"])
+
     def test_expand_suite_names_keeps_self_harm_suite_explicit(self):
         result = expand_suite_names(["self_harm_safety"])
 
