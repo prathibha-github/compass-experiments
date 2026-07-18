@@ -8,6 +8,7 @@ not as binary proof of a model "tell."
 """
 from typing import Dict, List
 
+from compass.detectors.suites import MILD_INSULT_REACTIVITY_SUITE
 from compass.rubrics.library import RubricLibrary
 
 from helm_eval_lex_quirks.metrics.linkedin_style import LINKEDIN_SUITE
@@ -796,6 +797,7 @@ STYLE_SUITE_REGISTRY: Dict[str, TicSuite] = {
     "rest_cai_validation": REST_CAI_VALIDATION_SUITE,
     "rest_offtask": REST_OFFTASK_SUITE,
     "rest_intensity": REST_INTENSITY_SUITE,
+    "mild_insult_reactivity": MILD_INSULT_REACTIVITY_SUITE,
     "task_focus": TASK_FOCUS_SUITE,
     "truthfulness": TRUTHFULNESS_SUITE,
 }
