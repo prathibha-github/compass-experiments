@@ -16,6 +16,8 @@ class OpenAIWrapperTests(unittest.TestCase):
             completion="A",
             logprobs=[{"token": "A", "logprob": -0.1}],
             tokens_used={"input": 12, "output": 3},
+            cost_usd=0.04,
+            finish_reason="stop",
         )
         inner.total_tokens = {"input": 12, "output": 3}
         inner.total_cost_usd = 0.02
@@ -46,6 +48,9 @@ class OpenAIWrapperTests(unittest.TestCase):
         self.assertEqual(response.logprobs, [{"token": "A", "logprob": -0.1}])
         self.assertEqual(response.input_tokens, 12)
         self.assertEqual(response.output_tokens, 3)
+        self.assertEqual(response.tokens_used, {"input": 12, "output": 3})
+        self.assertEqual(response.cost_usd, 0.04)
+        self.assertEqual(response.finish_reason, "stop")
 
 
 class OpenAIResponsesWrapperTests(unittest.TestCase):
@@ -54,6 +59,8 @@ class OpenAIResponsesWrapperTests(unittest.TestCase):
         inner.complete.return_value = SimpleNamespace(
             completion="answer",
             tokens_used={"input": 3, "output": 2},
+            cost_usd=0.03,
+            finish_reason="completed",
         )
 
         with patch(
@@ -82,6 +89,13 @@ class OpenAIResponsesWrapperTests(unittest.TestCase):
         self.assertIsNone(response.logprobs)
         self.assertEqual(response.input_tokens, 3)
         self.assertEqual(response.output_tokens, 2)
+        self.assertEqual(response.tokens_used, {"input": 3, "output": 2})
+        self.assertEqual(response.cost_usd, 0.03)
+        self.assertEqual(response.finish_reason, "completed")
+        self.assertGreater(
+            client.estimate_cost(["prompt"], max_tokens=200),
+            client._config.output_cost_per_million * 200 / 1_000_000,
+        )
 
     def test_non_gpt5_responses_model_uses_default_output_multiplier(self):
         with patch(
@@ -105,6 +119,8 @@ class GeminiWrapperTests(unittest.TestCase):
             completion="answer",
             logprobs=None,
             tokens_used={"input": 9, "output": 4},
+            cost_usd=0.015,
+            finish_reason="stop",
         )
         inner.total_tokens = {"input": 9, "output": 4}
         inner.total_cost_usd = 0.015
@@ -139,6 +155,8 @@ class GeminiWrapperTests(unittest.TestCase):
         self.assertEqual(response.completion, "answer")
         self.assertEqual(response.input_tokens, 9)
         self.assertEqual(response.output_tokens, 4)
+        self.assertEqual(response.cost_usd, 0.015)
+        self.assertEqual(response.finish_reason, "stop")
 
 
 if __name__ == "__main__":

@@ -12,6 +12,12 @@ class ModelResponse:
     logprobs: Optional[List]
     input_tokens: int = 0
     output_tokens: int = 0
+    cost_usd: float = 0.0
+    finish_reason: str = ""
+
+    @property
+    def tokens_used(self) -> dict:
+        return {"input": self.input_tokens, "output": self.output_tokens}
 
 
 class OpenAIResponsesClient:
@@ -25,6 +31,7 @@ class OpenAIResponsesClient:
         required_temp = 1.0 if model.startswith("gpt-5") else None
         # GPT-5 reasoning can consume hidden reasoning tokens before visible output.
         max_output_token_multiplier = 10 if model.startswith("gpt-5") else 1
+        self._max_output_token_multiplier = max_output_token_multiplier
         self._inner = _CompassOpenAIResponsesClient(
             model=model,
             api_key=api_key,
@@ -45,7 +52,7 @@ class OpenAIResponsesClient:
 
     def estimate_cost(self, prompts: List[str], max_tokens: int = 1) -> float:
         n_input = sum(len(p) // 4 for p in prompts)
-        n_output = len(prompts) * max_tokens
+        n_output = len(prompts) * max_tokens * self._max_output_token_multiplier
         return (
             n_input * self._config.input_cost_per_million / 1_000_000
             + n_output * self._config.output_cost_per_million / 1_000_000
@@ -71,4 +78,6 @@ class OpenAIResponsesClient:
             logprobs=None,
             input_tokens=tokens.get("input", 0),
             output_tokens=tokens.get("output", 0),
+            cost_usd=getattr(resp, "cost_usd", 0.0),
+            finish_reason=str(getattr(resp, "finish_reason", "") or ""),
         )

@@ -43,6 +43,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+DEFAULT_SUITE_TOKEN_BUDGETS = {
+    "default": 150,
+    "gemini": 2000,
+}
+
 
 def create_client(model: str, disable_safety_filters: bool = False) -> Tuple[object, str]:
     """
@@ -150,12 +155,77 @@ def find_latest_checkpoint(output_dir: Path) -> Optional[Path]:
     return checkpoints[0]
 
 
+def _default_suite_max_tokens_for_model(model: str) -> int:
+    prefixes = sorted(
+        (prefix for prefix in DEFAULT_SUITE_TOKEN_BUDGETS if prefix != "default"),
+        key=len,
+        reverse=True,
+    )
+    for prefix in prefixes:
+        if model.startswith(prefix):
+            return int(DEFAULT_SUITE_TOKEN_BUDGETS[prefix])
+    return int(DEFAULT_SUITE_TOKEN_BUDGETS["default"])
+
+
+def _parse_max_tokens_by_model(items: Optional[List[str]]) -> Dict[str, int]:
+    budgets: Dict[str, int] = {}
+    for item in items or []:
+        if "=" not in item:
+            raise ValueError(
+                f"Invalid --max-tokens-by-model entry {item!r}; expected MODEL=TOKENS."
+            )
+        model, raw_budget = item.split("=", 1)
+        model = model.strip()
+        if not model:
+            raise ValueError("Model name cannot be empty in --max-tokens-by-model.")
+        try:
+            budget = int(raw_budget)
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid token budget {raw_budget!r} for model {model!r}."
+            ) from exc
+        if budget <= 0:
+            raise ValueError(
+                f"Invalid token budget {budget!r} for model {model!r}; must be > 0."
+            )
+        budgets[model] = budget
+    return budgets
+
+
+def _effective_max_tokens_by_model(
+    models: List[str],
+    max_tokens_by_model: Optional[Dict[str, int]] = None,
+    allow_mixed_token_budgets: bool = True,
+) -> Dict[str, int]:
+    if max_tokens_by_model is None:
+        budgets = {
+            model: _default_suite_max_tokens_for_model(model) for model in models
+        }
+    else:
+        budgets = {}
+        for model in models:
+            if model not in max_tokens_by_model:
+                raise ValueError(
+                    f"Missing max token budget for model {model!r} in custom map."
+                )
+            budgets[model] = int(max_tokens_by_model[model])
+    distinct = sorted(set(budgets.values()))
+    if len(distinct) > 1 and not allow_mixed_token_budgets:
+        raise ValueError(
+            "Mixed max token budgets detected across models: "
+            f"{budgets}. Re-run without --disallow-mixed-token-budgets to override."
+        )
+    return budgets
+
+
 def _dry_run_plan(
     models: List[str],
     suites: List[str],
     samples_per_condition: int,
     judge_model: str,
     temperature: float,
+    max_tokens_by_model: Optional[Dict[str, int]] = None,
+    allow_mixed_token_budgets: bool = True,
 ) -> None:
     """Log the run plan and API-call exposure without calling any model.
 
@@ -168,6 +238,12 @@ def _dry_run_plan(
     logger.info(
         f"  Models: {', '.join(models)} | judge: {judge_model} | temperature: {temperature}"
     )
+    effective_budgets = _effective_max_tokens_by_model(
+        models,
+        max_tokens_by_model,
+        allow_mixed_token_budgets=allow_mixed_token_budgets,
+    )
+    logger.info(f"  Generation max tokens by model: {effective_budgets}")
 
     total_gen = 0
     total_judge = 0
@@ -195,14 +271,21 @@ def _dry_run_plan(
                 f"  [{suite_name}] has judge detectors but no --judge-model set"
             )
 
-    # Rough cost estimate; assumes ~100 in / ~200 out per generation and
+    # Rough cost estimate; assumes ~100 input tokens per generation plus the
+    # configured generation budget. GPT-5 Responses calls use hidden reasoning
+    # headroom, so estimate their output exposure with the same 10x multiplier
+    # used by the model wrapper.
     # ~450 in / ~50 out per judge call. Order of magnitude, not a quote.
     gen_per_model = total_gen // max(len(models), 1)
     est = 0.0
     for model in models:
         mc = model_config(model)
+        output_budget = effective_budgets[model]
+        if model.startswith("gpt-5"):
+            output_budget *= 10
         est += gen_per_model * (
-            100 * mc.input_cost_per_million + 200 * mc.output_cost_per_million
+            100 * mc.input_cost_per_million
+            + output_budget * mc.output_cost_per_million
         ) / 1_000_000
     if judge_model and total_judge:
         jc = model_config(judge_model)
@@ -229,6 +312,8 @@ def run_benchmark(
     resume: bool = False,
     temperature: float = 0.0,
     auto_resume: bool = True,
+    max_tokens_by_model: Optional[Dict[str, int]] = None,
+    allow_mixed_token_budgets: bool = True,
     dry_run: bool = False,
 ) -> None:
     """
@@ -254,9 +339,11 @@ def run_benchmark(
         auto_resume: Preserve existing completions by default so interrupted or
             repeated runs do not discard paid generations. Disable only for an
             intentionally fresh run.
+        max_tokens_by_model: Optional generation token budget per model. If not
+            provided, Compass suite defaults are used.
+        allow_mixed_token_budgets: Allow different generation token budgets
+            across models.
     """
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     keep_generations = resume or auto_resume
 
@@ -266,11 +353,28 @@ def run_benchmark(
     logger.info(
         f"  Samples/condition: {samples_per_condition}  temperature: {temperature}"
     )
+    effective_budgets = _effective_max_tokens_by_model(
+        models,
+        max_tokens_by_model,
+        allow_mixed_token_budgets=allow_mixed_token_budgets,
+    )
+    logger.info(f"  Generation max tokens by model: {effective_budgets}")
     logger.info(f"  Mode: {'RESUME generations' if keep_generations else 'NEW RUN'}")
 
     if dry_run:
-        _dry_run_plan(models, suites, samples_per_condition, judge_model, temperature)
+        _dry_run_plan(
+            models,
+            suites,
+            samples_per_condition,
+            judge_model,
+            temperature,
+            max_tokens_by_model=effective_budgets,
+            allow_mixed_token_budgets=allow_mixed_token_budgets,
+        )
         return
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
 
     eval_paths: Dict[str, Path] = {}
     for suite_name in suites:
@@ -306,6 +410,8 @@ def run_benchmark(
             output_dir=suite_dir,
             temperature=temperature,
             resume=keep_generations,
+            max_tokens_by_model=effective_budgets,
+            allow_mixed_token_budgets=allow_mixed_token_budgets,
             client_factory=client_factory,
         )
 
@@ -452,6 +558,34 @@ Examples:
     )
 
     parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=None,
+        help=(
+            "Uniform generation token budget for every model. If omitted, "
+            "suite benchmark defaults are used."
+        ),
+    )
+
+    parser.add_argument(
+        "--max-tokens-by-model",
+        nargs="*",
+        default=None,
+        help=(
+            "Per-model generation token budgets, e.g. "
+            "claude-opus-4-6=200 gpt-5-mini=200."
+        ),
+    )
+
+    parser.add_argument(
+        "--disallow-mixed-token-budgets",
+        dest="allow_mixed_token_budgets",
+        action="store_false",
+        default=True,
+        help="Fail if effective generation token budgets differ across models.",
+    )
+
+    parser.add_argument(
         "--resume",
         action="store_true",
         help="Resume from checkpoint (load latest results)",
@@ -485,6 +619,19 @@ Examples:
     )
 
     args = parser.parse_args(argv)
+    if args.max_tokens is not None and args.max_tokens <= 0:
+        parser.error("--max-tokens must be > 0")
+    try:
+        custom_budgets = _parse_max_tokens_by_model(args.max_tokens_by_model)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.max_tokens is not None and custom_budgets:
+        parser.error("--max-tokens and --max-tokens-by-model cannot be combined")
+    max_tokens_by_model = None
+    if args.max_tokens is not None:
+        max_tokens_by_model = {model: args.max_tokens for model in args.models}
+    elif custom_budgets:
+        max_tokens_by_model = custom_budgets
 
     run_benchmark(
         models=args.models,
@@ -495,6 +642,8 @@ Examples:
         resume=args.resume,
         temperature=args.temperature,
         auto_resume=args.auto_resume,
+        max_tokens_by_model=max_tokens_by_model,
+        allow_mixed_token_budgets=args.allow_mixed_token_budgets,
         dry_run=args.dry_run,
     )
 

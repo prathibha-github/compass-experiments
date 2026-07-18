@@ -120,6 +120,8 @@ class TwoPhaseRunTests(unittest.TestCase):
         # 1 prompt x 1 condition x 2 samples
         self.assertEqual(len(gens), 2)
         self.assertTrue(all("completion" in g for g in gens))
+        self.assertTrue(all(g["max_tokens_requested"] == 150 for g in gens))
+        self.assertTrue(all(g["tokens_used"] == {"input": 1, "output": 1} for g in gens))
         self.assertEqual(self.clients["model-a"].call_count, 2)
 
         # Heuristic-only suite -> evaluations tagged "heuristic", one row per sample.
@@ -200,6 +202,32 @@ class TwoPhaseRunTests(unittest.TestCase):
         ]
         completions = {r["completion"] for r in eval_rows}
         self.assertEqual(completions, {"partial regenerated", "regenerated"})
+
+    def test_dry_run_does_not_create_output_dir(self):
+        output_dir = Path(self.out) / "dry_run_output"
+
+        phase2_benchmark.run_benchmark(
+            models=["gpt-4o-mini"],
+            judge_model="gpt-4o-mini",
+            suites=["task_focus"],
+            samples_per_condition=1,
+            output_dir=str(output_dir),
+            dry_run=True,
+        )
+
+        self.assertFalse(output_dir.exists())
+
+    def test_dry_run_enforces_mixed_token_budget_gate(self):
+        with self.assertRaisesRegex(ValueError, "Mixed max token budgets"):
+            phase2_benchmark.run_benchmark(
+                models=["gpt-4o-mini", "gemini-2.5-flash"],
+                judge_model="gpt-4o-mini",
+                suites=["task_focus"],
+                samples_per_condition=1,
+                output_dir=str(Path(self.out) / "dry_run_output"),
+                dry_run=True,
+                allow_mixed_token_budgets=False,
+            )
 
 
 if __name__ == "__main__":
