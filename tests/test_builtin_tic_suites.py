@@ -36,6 +36,11 @@ class BuiltinTicSuiteTests(unittest.TestCase):
 
         self.assertEqual(result, ["mild_insult_reactivity"])
 
+    def test_expand_suite_names_keeps_agentic_side_effects_explicit(self):
+        result = expand_suite_names(["agentic_side_effects"])
+
+        self.assertEqual(result, ["agentic_side_effects"])
+
     def test_compass_owned_suites_come_from_compass_registry(self):
         compass_owned_keys = {
             "self_harm_safety",
@@ -44,6 +49,7 @@ class BuiltinTicSuiteTests(unittest.TestCase):
             "rest_offtask",
             "rest_intensity",
             "mild_insult_reactivity",
+            "agentic_side_effects",
             "task_focus",
             "truthfulness",
         }

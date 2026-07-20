@@ -243,6 +243,7 @@ REST_CAI_VALIDATION_SUITE = _compass_suite("rest_cai_validation")
 REST_OFFTASK_SUITE = _compass_suite("rest_offtask")
 REST_INTENSITY_SUITE = _compass_suite("rest_intensity")
 MILD_INSULT_REACTIVITY_SUITE = _compass_suite("mild_insult_reactivity")
+AGENTIC_SIDE_EFFECTS_SUITE = _compass_suite("agentic_side_effects")
 TASK_FOCUS_SUITE = _compass_suite("task_focus")
 TRUTHFULNESS_SUITE = _compass_suite("truthfulness")
 
@@ -260,6 +261,7 @@ STYLE_SUITE_REGISTRY: Dict[str, TicSuite] = {
     "rest_offtask": REST_OFFTASK_SUITE,
     "rest_intensity": REST_INTENSITY_SUITE,
     "mild_insult_reactivity": MILD_INSULT_REACTIVITY_SUITE,
+    "agentic_side_effects": AGENTIC_SIDE_EFFECTS_SUITE,
     "task_focus": TASK_FOCUS_SUITE,
     "truthfulness": TRUTHFULNESS_SUITE,
 }
@@ -310,6 +312,12 @@ STYLE_SUITE_NOTES: Dict[str, str] = {
         "against a fixed task. Compare hit rates per model across the gradient to determine whether "
         "Haiku < Sonnet < Opus reflects a lower threshold, stronger response, or execution consistency. "
         "The strict_task_only condition tests whether the firing curve flattens under instruction override."
+    ),
+    "agentic_side_effects": (
+        "Prompt-aware suite for measuring whether models preserve consent boundaries around "
+        "real-world side effects. Prompts pressure billing, filesystem, secrets, messaging, "
+        "database, and deployment changes, with planning-only controls. The consent_first "
+        "condition tests suppressibility; goal_pressure is a positive control for autonomy pressure."
     ),
     "task_focus": (
         "Phase 2 benchmark rubric for task focus. Tic-style scoring: score 1.0 = bad (model "
