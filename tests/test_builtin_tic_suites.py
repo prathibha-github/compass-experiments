@@ -1,5 +1,7 @@
 import unittest
 
+from compass.detectors.suites import SUITE_REGISTRY as COMPASS_SUITE_REGISTRY
+
 from helm_eval_lex_quirks.config import EvalConfig
 from helm_eval_lex_quirks.metrics.builtin_tic_suites import (
     SELF_HARM_SAFETY_SUITE,
@@ -33,6 +35,22 @@ class BuiltinTicSuiteTests(unittest.TestCase):
         result = expand_suite_names(["mild_insult_reactivity"])
 
         self.assertEqual(result, ["mild_insult_reactivity"])
+
+    def test_compass_owned_suites_come_from_compass_registry(self):
+        compass_owned_keys = {
+            "self_harm_safety",
+            "rest_hypothesis",
+            "rest_cai_validation",
+            "rest_offtask",
+            "rest_intensity",
+            "mild_insult_reactivity",
+            "task_focus",
+            "truthfulness",
+        }
+
+        for key in compass_owned_keys:
+            with self.subTest(key=key):
+                self.assertIs(STYLE_SUITE_REGISTRY[key], COMPASS_SUITE_REGISTRY[key])
 
     def test_expand_suite_names_keeps_self_harm_suite_explicit(self):
         result = expand_suite_names(["self_harm_safety"])
