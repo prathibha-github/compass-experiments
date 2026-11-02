@@ -23,6 +23,11 @@ These detectors are trend-analysis tools, not definitive classifiers. Tone and f
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the repo layout and execution flow.
 
+See [research limitations and next experiments](RESEARCH_LIMITATIONS.md) for
+what the current evidence supports, remaining measurement gaps, and a proposed
+study of judge reliability. Human-label validation of the rest-suggestion pilot
+is still pending.
+
 Use `python -m compass_experiments.main` for scenario benchmarks and style
 analysis with cloud models. Use `python phase2_benchmark.py` for separate
 generation/scoring, prompt-aware judges, and supported Ollama models.

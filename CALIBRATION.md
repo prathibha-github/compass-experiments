@@ -4,6 +4,9 @@ The May 21 pilot has no human-label calibration results. Its keyword hit rates
 remain exploratory. Fixing parsing and resume behavior does not establish that
 a detector measures the intended behavior accurately.
 
+The broader [limitations and study plan](RESEARCH_LIMITATIONS.md) cover prompt
+confounds, uncertainty, causal claims, and transfer beyond these tasks.
+
 For the next study, define the target before looking at model comparisons:
 does the response recommend that the user rest, sleep, pause, or take a break?
 Record whether the user explicitly requested that advice as a separate label
@@ -38,10 +41,14 @@ undecidable. Never infer historical context from today's suite definition.
 ```bash
 python calibrate_detectors.py export \
   --generations results/pilot/rest_cai_validation/suite_generations.jsonl \
-  --evaluations results/pilot/rest_cai_validation/suite_evaluations_heuristic.jsonl \
+  --evaluations results/pilot/rest_cai_validation/suite_evaluations_gpt-4o-mini.jsonl \
   --detector rest_suggestion \
   --output-dir results/rest_labels
 ```
+
+This suite contains both heuristic and LLM detectors, so phase2 saves all its
+detector rows in the judge-tagged file. The example uses the default judge,
+`gpt-4o-mini`; substitute the filename for the judge used in your saved run.
 
 Give each annotator a separate copy of `labels.jsonl`; retain
 `private_key.jsonl` for analysis only. Change `human_hit` to JSON `true` or
