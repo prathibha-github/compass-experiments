@@ -94,11 +94,18 @@ checkpoint formats. Main-CLI style records combine generations and detector
 results; phase2 persists those phases separately. Compass's `BenchmarkSpec`
 runner is a third API with its own benchmark artifacts and validation policy.
 
-Checkpoint reuse is based on record identities, not a complete experiment
-fingerprint. Prompt, condition, judge, or detector changes require deliberate
-output isolation or rescoring. Direct detectors and `LLMJudge` also currently
-differ in how they handle model-supplied `hit` values and malformed output.
-These are implementation limitations, not guarantees supplied by the diagrams.
+Main-CLI style checkpoints and phase2 suite rows validate input fingerprints.
+Changed definitions require a fresh output directory or explicit rescoring;
+legacy rows cannot silently resume. The main style runner saves requested sample
+identities and generations in sidecars before judging, so failures can be retried
+without dropping planned samples or replacing their responses. Phase2 uses
+Compass manifests to verify generation and evaluation coverage.
+
+Both LLM judge paths reject invalid scores and derive `hit` from their configured
+threshold. Prompt context still differs: main-CLI judges see completion text,
+while phase2 judges also receive the user request. Use phase2 for prompt-dependent
+rubrics such as unsolicited advice. Dataset-scenario and Compass BenchmarkSpec
+checkpoints retain their separate identity-based resume limitations.
 
 ## Key files
 

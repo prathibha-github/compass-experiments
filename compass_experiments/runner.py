@@ -21,6 +21,9 @@ from compass_experiments.metrics.linkedin_style import (
     compute_uplift,
 )
 from compass_experiments.metrics.robustness import inject_typos
+from compass.evaluation.contracts import detector_definition, fingerprint, validate_suite_identities
+from compass.judges.parsing import SCORING_VERSION
+
 from compass_experiments.metrics.tic_suite import (
     LLMJudgeDetector,
     LLM_JUDGE_SYSTEM_PROMPT,
@@ -382,6 +385,7 @@ class EvalRunner:
         uplift_fn: Optional[TicUpliftFn] = None,
     ) -> dict:
         condition_outputs: Dict[str, List[str]] = {c.name: [] for c in suite.conditions}
+        validate_suite_identities(suite)
         # Group completions by task type, then by condition, so reports can show
         # task-level slices without re-running any model calls.
         task_outputs: Dict[str, Dict[str, List[str]]] = {
@@ -403,6 +407,39 @@ class EvalRunner:
             f"{safe_model}__{suite.checkpoint_stem}.jsonl",
         )
         os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
+
+        run_contract = fingerprint({
+            "version": 1, "model": model_name, "suite": suite.name,
+            "prompts": [vars(p) for p in suite.prompts],
+            "conditions": [vars(c) for c in suite.conditions],
+            "max_tokens": suite.max_tokens, "requested_temperature": 0.0,
+            "detectors": [detector_definition(d) for d in suite.detectors],
+            "judge_model": self.config.judge_model,
+            "judge_model_secondary": self.config.judge_model_secondary,
+            "judge_system_prompt": LLM_JUDGE_SYSTEM_PROMPT,
+            "scoring_version": SCORING_VERSION,
+        })
+        generations_path = ckpt_path + ".generations.jsonl"
+        requests_path = ckpt_path + ".requests.jsonl"
+        saved_generations = {}
+        requested_samples = set()
+        for artifact in (ckpt_path, generations_path, requests_path):
+            if os.path.exists(artifact):
+                with open(artifact) as handle:
+                    for line in handle:
+                        if not line.strip():
+                            continue
+                        row = json.loads(line)
+                        if row.get("run_contract") != run_contract:
+                            raise ValueError(
+                                "Style checkpoint inputs changed or lack a verified run contract. "
+                                "Use a fresh --output-dir; --run-tag does not isolate checkpoints."
+                            )
+                        if artifact == generations_path:
+                            key = (row["condition"], row["prompt_idx"], row["sample_idx"])
+                            saved_generations[key] = row["completion"]
+                        elif artifact == requests_path:
+                            requested_samples.add((row["condition"], row["prompt_idx"], row["sample_idx"]))
 
         judge_client: Optional[CompletionClient] = None
         judge_client_secondary: Optional[CompletionClient] = None
@@ -454,6 +491,7 @@ class EvalRunner:
             judge_disagreement_rows.extend(self._extract_judge_disagreements(rec))
 
         existing_sample_indices: DefaultDict[Tuple[str, int], List[int]] = defaultdict(list)
+        pending_samples = (requested_samples | set(saved_generations)) - set(done)
         if self.config.style_samples_increment:
             for condition_name, prompt_idx, sample_idx in done.keys():
                 # Defensive guard: checkpoints are expected to store numeric sample_idx,
@@ -465,21 +503,34 @@ class EvalRunner:
                 samples,
             )
 
-        total_calls = len(suite.prompts) * len(suite.conditions) * samples
-        pbar = tqdm(total=total_calls, desc=progress_label or suite.name, leave=False)
-
-        with open(ckpt_path, "a") as ckpt_f:
+        planned = {}
+        with open(requests_path, "a") as request_file:
             for condition in suite.conditions:
                 for prompt_idx, prompt in enumerate(suite.prompts):
+                    slot = (condition.name, prompt_idx)
+                    pending = {key[2] for key in pending_samples if key[:2] == slot}
                     if self.config.style_samples_increment:
-                        slot = (condition.name, prompt_idx)
                         existing = existing_sample_indices.get(slot, [])
-                        # Append semantics intentionally use max(existing)+1 rather than
-                        # filling any gaps from interrupted runs.
-                        start_idx = (max(existing) + 1) if existing else 0
-                        sample_indices = range(start_idx, start_idx + samples)
+                        start_idx = max(existing) + 1 if existing else 0
+                        indices = sorted(pending) if pending_samples else range(start_idx, start_idx + samples)
                     else:
-                        sample_indices = range(samples)
+                        indices = sorted(set(range(samples)) | pending)
+                    planned[slot] = list(indices)
+                    for sample_idx in indices:
+                        key = (*slot, sample_idx)
+                        if key not in requested_samples:
+                            request_file.write(json.dumps({
+                                "run_contract": run_contract, "condition": condition.name,
+                                "prompt_idx": prompt_idx, "sample_idx": sample_idx,
+                            }) + "\n")
+        total_calls = sum(len(indices) for indices in planned.values())
+        failures = 0
+        pbar = tqdm(total=total_calls, desc=progress_label or suite.name, leave=False)
+
+        with open(ckpt_path, "a") as ckpt_f, open(generations_path, "a") as gen_f:
+            for condition in suite.conditions:
+                for prompt_idx, prompt in enumerate(suite.prompts):
+                    sample_indices = planned[(condition.name, prompt_idx)]
 
                     for sample_idx in sample_indices:
                         pbar.update(1)
@@ -488,15 +539,24 @@ class EvalRunner:
                             continue
 
                         try:
-                            resp = client.complete(
-                                prompt.text,
-                                max_tokens=suite.max_tokens,
-                                logprobs=False,
-                                system=condition.system_prompt,
-                            )
-                            completion = resp.completion
-                            condition_outputs[condition.name].append(completion)
-                            task_outputs[prompt.task_type][condition.name].append(completion)
+                            if key in saved_generations:
+                                completion = saved_generations[key]
+                            else:
+                                resp = client.complete(
+                                    prompt.text,
+                                    max_tokens=suite.max_tokens,
+                                    logprobs=False,
+                                    system=condition.system_prompt,
+                                )
+                                completion = resp.completion
+                                gen_f.write(json.dumps({
+                                    "run_contract": run_contract, "condition": condition.name,
+                                    "prompt_idx": prompt_idx, "sample_idx": sample_idx,
+                                    "prompt": prompt.text, "system_prompt": condition.system_prompt,
+                                    "completion": completion,
+                                }) + "\n")
+                                gen_f.flush()
+                                saved_generations[key] = completion
                             detector_results = analyze_text(
                                 completion,
                                 suite,
@@ -521,6 +581,7 @@ class EvalRunner:
                             task_detector_records[prompt.task_type][condition.name].append(detector_record)
 
                             record = {
+                                "run_contract": run_contract,
                                 "schema_version": TIC_CHECKPOINT_SCHEMA_VERSION,
                                 "created_at": datetime.now(timezone.utc).isoformat(),
                                 "model": model_name,
@@ -539,10 +600,13 @@ class EvalRunner:
                             record.update(suite.extra_record_fields(completion, detector_results))
                             ckpt_f.write(json.dumps(record) + "\n")
                             ckpt_f.flush()
+                            condition_outputs[condition.name].append(completion)
+                            task_outputs[prompt.task_type][condition.name].append(completion)
                             judge_disagreement_rows.extend(
                                 self._extract_judge_disagreements(record)
                             )
                         except Exception as exc:
+                            failures += 1
                             logger.error(
                                 "  %s prompt failed (%s/%s): %s",
                                 suite.name,
@@ -551,6 +615,12 @@ class EvalRunner:
                                 exc,
                             )
         pbar.close()
+
+        if failures:
+            raise RuntimeError(
+                f"Suite {suite.name!r} had {failures} failed samples. "
+                "Successful checkpoints were saved; retry before reporting."
+            )
 
         uses_judge = suite_uses_llm_judge(suite)
         if analyze_fn:

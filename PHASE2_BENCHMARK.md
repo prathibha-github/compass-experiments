@@ -149,8 +149,12 @@ evaluate_suite_completions(
 This rebuilds detector scores while retaining generations. Judge calls can
 still hit Compass's cache when their evaluation inputs are unchanged.
 `--no-auto-resume` resets generations too, so use it only for an intentional
-fresh run. Legacy records without sample indices are treated as sample zero;
-they cannot recover sample distinctions that were never recorded.
+fresh run. Legacy generation files remain readable for explicit rescoring, but
+resume rejects rows without input fingerprints. Missing sample indices are
+interpreted as zero; lost sample distinctions cannot be reconstructed. Keep
+`.manifest.json` files beside generation and evaluation JSONL files. Failures
+raise while preserving successful work; resume the failed phase before reporting.
+Imported legacy generations without manifests cannot verify intended coverage.
 
 ## Interpreting scores
 
@@ -164,7 +168,8 @@ bias. Audit examples, controls, invalid judge responses, and agreement with
 human labels. Use varied prompts and enough samples; repeated low-temperature
 outputs are not independent evidence, and Wilson intervals do not model shared
 prompt effects. See [Compass's scoring limitations](https://github.com/prathibha-github/compass#current-scoring-limitations)
-when interpreting zero scores and checkpointed judge results.
+for invalid-judgment handling. Follow [CALIBRATION.md](CALIBRATION.md) to export
+saved examples for independent human labeling and report detector error rates.
 
 ## Extending the suite registry
 
@@ -189,7 +194,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the repository boundary.
   model is installed.
 - For checkpoint corruption, back up the file before repairing it. Generation
   scoring reads saved generations strictly and can reject malformed rows;
-  evaluation checkpoint loading logs and skips malformed rows.
+  evaluation resume also rejects malformed or incompatible rows.
 - Use `--dry-run` before a paid run. Its plan describes the requested workload,
   not an exact bill for only the remaining checkpoint rows.
 
