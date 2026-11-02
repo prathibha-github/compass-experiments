@@ -62,16 +62,19 @@ Constitutional AI or a particular training stage caused it. API experiments
 can test the effect of visible inputs. Attributing the behavior to training
 would need additional evidence.
 
-## The pilot is too small for a broad comparison
+## Keeping the pilot within budget
 
-The May 21 pilot planned five responses per prompt and condition. Some models
-are missing neutral controls, and the prompts differ from today's suite.
+I'm paying for these experiments out of pocket, so I kept the May 21 pilot to
+five responses per prompt and condition to keep API costs manageable. That
+limits how much I can conclude from differences between models. Some models
+are also missing neutral controls, and the prompts differ from today's suite.
 The [historical findings](CAI_FINDINGS.md) need to be read with those limits;
 recent code fixes haven't re-scored those results.
 
-For the follow-up, I need more distinct tasks, a neutral condition for every
-model, and a sample size chosen around how precisely I want to estimate the
-rates. Repeated responses to the same prompt shouldn't be treated as independent
+For the follow-up, I need to balance broader task coverage and neutral controls
+against the API budget, then choose comparisons the sample can support. Saved
+responses let me compare scoring methods without paying to generate them again.
+Repeated responses to the same prompt shouldn't be treated as independent
 tasks. I'll keep model and condition results separate and account for shared
 prompts when estimating uncertainty.
 
