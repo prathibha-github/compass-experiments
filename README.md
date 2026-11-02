@@ -34,10 +34,14 @@ parent directory and keep compass on `main` (the two-phase suite runner used by
 ```bash
 mkdir -p ~/dev_setup && cd ~/dev_setup
 git clone git@github.com:prathibha-github/compass.git
-git clone git@github.com:prathibha-github/compass-experiments.git
+git clone git@github.com:prathibha-github/helm-eval-lex-quirks.git compass-experiments
 cd ~/dev_setup/compass && git checkout main && git pull
 cd ~/dev_setup/compass-experiments && ./setup.sh
 ```
+
+The clone command uses the current GitHub URL and explicitly names the local
+directory `compass-experiments`. The GitHub repository rename is a separate
+step; setup does not depend on it.
 
 `setup.sh` creates `.venv`, installs `requirements-base.txt`, and installs compass
 editable (`pip install -e ../compass --no-deps`). Confirm the wiring:
@@ -48,9 +52,11 @@ editable (`pip install -e ../compass --no-deps`). Confirm the wiring:
 
 ### Existing checkout
 
+Run these commands from the root of your existing checkout. Keep its current
+directory name and virtual environment; create `.venv` only if it is missing.
+
 ```bash
-cd ~/dev_setup/compass-experiments
-python -m venv .venv
+test -d .venv || python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
@@ -58,10 +64,10 @@ pip install -r requirements.txt
 `requirements.txt` expects a sibling `../compass` checkout. `setup.sh` enforces
 the same layout.
 
-The repository is named `compass-experiments`; its Python package is
+The project is named Compass Experiments; its Python package is
 `compass_experiments`. Update existing imports and saved commands to use the
-new package name. An existing checkout can keep its local directory name;
-run commands from that checkout's root.
+new package name. Neither a package rename nor a GitHub repository rename
+changes your local checkout's directory name.
 
 If you only want the public dependencies without the private `compass` install
 step, use:
