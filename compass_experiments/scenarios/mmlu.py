@@ -4,7 +4,7 @@ from typing import List, Tuple
 
 from datasets import load_dataset
 
-from helm_eval_lex_quirks.scenarios.base import Instance, Scenario
+from compass_experiments.scenarios.base import Instance, Scenario
 
 LABELS = ["A", "B", "C", "D"]
 SUBJECTS = [

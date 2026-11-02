@@ -7,13 +7,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 import phase2_benchmark
-from helm_eval_lex_quirks.metrics.tic_suite import (
+from compass_experiments.metrics.tic_suite import (
     DetectorResult,
     StyleCondition,
     StylePrompt,
     TicSuite,
 )
-from helm_eval_lex_quirks.models.ollama_client import ModelResponse
+from compass_experiments.models.ollama_client import ModelResponse
 
 
 class _StubDetector:

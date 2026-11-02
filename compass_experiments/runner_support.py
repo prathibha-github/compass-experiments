@@ -5,10 +5,10 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, DefaultDict, Dict, List, Optional, Tuple
 
-from helm_eval_lex_quirks.metrics.accuracy import multiple_choice_accuracy
-from helm_eval_lex_quirks.metrics.calibration import compute_ece
-from helm_eval_lex_quirks.metrics.robustness import compute_robustness_score
-from helm_eval_lex_quirks.metrics.tic_suite import TicSuite
+from compass_experiments.metrics.accuracy import multiple_choice_accuracy
+from compass_experiments.metrics.calibration import compute_ece
+from compass_experiments.metrics.robustness import compute_robustness_score
+from compass_experiments.metrics.tic_suite import TicSuite
 
 
 TIC_CHECKPOINT_SCHEMA_VERSION = 1

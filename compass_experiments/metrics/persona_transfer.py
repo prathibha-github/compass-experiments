@@ -1,7 +1,7 @@
 """Persona-transfer scoring for tic-suite summaries."""
 from typing import Dict, List
 
-from helm_eval_lex_quirks.metrics.tic_suite import TicSuite
+from compass_experiments.metrics.tic_suite import TicSuite
 
 
 def _detector_transfer_score(pct_delta: float, mean_delta: float) -> float:

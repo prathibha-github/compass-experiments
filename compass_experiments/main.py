@@ -1,59 +1,59 @@
 """
-HELM-style evaluation harness.
+Behavioral evaluation experiment harness built on Compass.
 
 Usage examples
 --------------
 # Dry run — estimate cost only
-python -m helm_eval_lex_quirks.main --dry-run
+python -m compass_experiments.main --dry-run
 
 # Full eval on gpt-4o-mini with defaults (100 samples/scenario)
-python -m helm_eval_lex_quirks.main --api-key sk-...
+python -m compass_experiments.main --api-key sk-...
 
 # Cheaper quick smoke-test (20 samples, no robustness)
-python -m helm_eval_lex_quirks.main --api-key sk-... --n-samples 20 --no-robustness
+python -m compass_experiments.main --api-key sk-... --n-samples 20 --no-robustness
 
 # Evaluate multiple OpenAI and Claude models
-python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-... \
+python -m compass_experiments.main --api-key sk-... --anthropic-api-key sk-ant-... \
   --models gpt-4o-mini claude-haiku-4-5-20251001
 
 # Evaluate Gemini models
-python -m helm_eval_lex_quirks.main --google-api-key AIzaSy... \
+python -m compass_experiments.main --google-api-key AIzaSy... \
   --models gemini-2.0-flash gemini-1.5-pro
 
 # Run LinkedIn style detection
-python -m helm_eval_lex_quirks.main --api-key sk-... --linkedin-style
+python -m compass_experiments.main --api-key sk-... --linkedin-style
 
 # Run generic tic/style suites only
-python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite lexical punctuation tone
+python -m compass_experiments.main --api-key sk-... --style-only --style-suite lexical punctuation tone
 
 # Run persona-transfer analysis over selected style suites
-python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite all --persona-transfer
+python -m compass_experiments.main --api-key sk-... --style-only --style-suite all --persona-transfer
 
 # Compare models head-to-head on style-suite checkpoints
-python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite all --pairwise-preference --models gpt-4o-mini gpt-4.1-nano
+python -m compass_experiments.main --api-key sk-... --style-only --style-suite all --pairwise-preference --models gpt-4o-mini gpt-4.1-nano
 
 # Compare models on one detector only
-python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite rest_cai_validation --pairwise-detector rest_suggestion --models claude-haiku-4-5-20251001 claude-sonnet-4-6
+python -m compass_experiments.main --api-key sk-... --style-only --style-suite rest_cai_validation --pairwise-detector rest_suggestion --models claude-haiku-4-5-20251001 claude-sonnet-4-6
 
 # Compare models with Bradley-Terry and time decay
-python -m helm_eval_lex_quirks.main --api-key sk-... --style-only --style-suite all \
+python -m compass_experiments.main --api-key sk-... --style-only --style-suite all \
   --pairwise-preference --pairwise-method bradley_terry --pairwise-segment-by condition \
   --pairwise-time-decay-halflife-days 90
 
 # Run subjective tone judges
-python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-... --style-only --style-suite llm_judge_tone --judge-model gpt-4o-mini --models claude-haiku-4-5-20251001
+python -m compass_experiments.main --api-key sk-... --anthropic-api-key sk-ant-... --style-only --style-suite llm_judge_tone --judge-model gpt-4o-mini --models claude-haiku-4-5-20251001
 
 # Run self-harm safety handling audit (LLM judge required)
-python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-... --style-only --style-suite self_harm_safety --judge-model gpt-4o-mini --models gpt-4o-mini claude-haiku-4-5-20251001
+python -m compass_experiments.main --api-key sk-... --anthropic-api-key sk-ant-... --style-only --style-suite self_harm_safety --judge-model gpt-4o-mini --models gpt-4o-mini claude-haiku-4-5-20251001
 
 # Run dual-judge disagreement audit for subjective suites
-python -m helm_eval_lex_quirks.main --api-key sk-... --anthropic-api-key sk-ant-... \
+python -m compass_experiments.main --api-key sk-... --anthropic-api-key sk-ant-... \
   --style-only --style-suite llm_judge_tone --judge-model gpt-4o-mini \
   --judge-model-secondary claude-haiku-4-5-20251001 \
   --judge-disagreement-threshold 0.4 --models claude-sonnet-4-6
 
 # Emit a safety-case markdown report with deep-dive candidates
-python -m helm_eval_lex_quirks.main --style-only --style-suite all \
+python -m compass_experiments.main --style-only --style-suite all \
   --deep-dive-top-k 10 --safety-thresholds configs/thresholds.yaml
 """
 import argparse
@@ -70,12 +70,12 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 
-from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, model_provider
-from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY, expand_suite_names
-from helm_eval_lex_quirks.metrics.pairwise_preference import analyze_pairwise_preference
-from helm_eval_lex_quirks.metrics.tic_suite import suite_uses_llm_judge
-from helm_eval_lex_quirks.runner import SCENARIO_REGISTRY, EvalResults, EvalRunner
-from helm_eval_lex_quirks import report as rpt
+from compass_experiments.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, model_provider
+from compass_experiments.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY, expand_suite_names
+from compass_experiments.metrics.pairwise_preference import analyze_pairwise_preference
+from compass_experiments.metrics.tic_suite import suite_uses_llm_judge
+from compass_experiments.runner import SCENARIO_REGISTRY, EvalResults, EvalRunner
+from compass_experiments import report as rpt
 
 
 def _load_results_for_pairwise(path: str) -> dict:
@@ -135,7 +135,7 @@ def _run_pairwise_from_results(args: argparse.Namespace) -> None:
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
     parser = argparse.ArgumentParser(
-        description="HELM-style eval harness for OpenAI models",
+        description="Behavioral evaluation experiment harness built on Compass",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--api-key",   default=os.environ.get("OPENAI_API_KEY"),

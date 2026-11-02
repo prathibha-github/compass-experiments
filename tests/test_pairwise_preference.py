@@ -3,9 +3,9 @@ import os
 import tempfile
 import unittest
 
-from helm_eval_lex_quirks.runner import EvalResults
-from helm_eval_lex_quirks.metrics.pairwise_preference import analyze_pairwise_preference
-from helm_eval_lex_quirks.report import format_table
+from compass_experiments.runner import EvalResults
+from compass_experiments.metrics.pairwise_preference import analyze_pairwise_preference
+from compass_experiments.report import format_table
 
 
 def _write_jsonl(path, records):

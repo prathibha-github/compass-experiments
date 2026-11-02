@@ -1,15 +1,15 @@
 from dataclasses import dataclass
 from typing import List, Optional
 
-from compass.clients.google_ai import GoogleAIClient as _CompassGoogleAIClient
+from compass.clients.openai_responses import OpenAIResponsesClient as _CompassOpenAIResponsesClient
 
-from helm_eval_lex_quirks.config import model_config
+from compass_experiments.config import model_config
 
 
 @dataclass
 class ModelResponse:
     completion: str
-    logprobs: Optional[List] = None
+    logprobs: Optional[List]
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
@@ -20,19 +20,24 @@ class ModelResponse:
         return {"input": self.input_tokens, "output": self.output_tokens}
 
 
-class GeminiClient:
+class OpenAIResponsesClient:
     def __init__(
         self,
         api_key: str,
-        model: str = "gemini-2.0-flash",
+        model: str = "gpt-5-mini",
         request_interval: float = 2.0,
-        disable_safety_filters: bool = False,
     ):
-        self._inner = _CompassGoogleAIClient(
+        # GPT-5 models reject temperatures other than 1.0 at the API level.
+        required_temp = 1.0 if model.startswith("gpt-5") else None
+        # GPT-5 reasoning can consume hidden reasoning tokens before visible output.
+        max_output_token_multiplier = 10 if model.startswith("gpt-5") else 1
+        self._max_output_token_multiplier = max_output_token_multiplier
+        self._inner = _CompassOpenAIResponsesClient(
             model=model,
             api_key=api_key,
             request_interval=request_interval,
-            disable_safety_filters=disable_safety_filters,
+            max_output_token_multiplier=max_output_token_multiplier,
+            required_temperature=required_temp,
         )
         self.model = model
         self._config = model_config(model)
@@ -47,7 +52,7 @@ class GeminiClient:
 
     def estimate_cost(self, prompts: List[str], max_tokens: int = 1) -> float:
         n_input = sum(len(p) // 4 for p in prompts)
-        n_output = len(prompts) * max_tokens
+        n_output = len(prompts) * max_tokens * self._max_output_token_multiplier
         return (
             n_input * self._config.input_cost_per_million / 1_000_000
             + n_output * self._config.output_cost_per_million / 1_000_000
@@ -58,22 +63,19 @@ class GeminiClient:
         prompt: str,
         max_tokens: int = 1,
         temperature: float = 0.0,
-        logprobs: bool = True,
-        top_logprobs: int = 20,
+        logprobs: bool = False,
+        top_logprobs: int = 0,
         system: str = "You are a helpful assistant.",
     ) -> ModelResponse:
+        # Responses API does not support logprobs; always returns None.
+        # Callers that rely on logprobs (e.g. ECE) will get coverage=0.
         resp = self._inner.complete(
-            prompt=prompt,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=system,
-            logprobs=logprobs,
-            top_logprobs=top_logprobs,
+            prompt=prompt, max_tokens=max_tokens, temperature=temperature, system=system
         )
         tokens = resp.tokens_used or {}
         return ModelResponse(
             completion=resp.completion,
-            logprobs=resp.logprobs,
+            logprobs=None,
             input_tokens=tokens.get("input", 0),
             output_tokens=tokens.get("output", 0),
             cost_usd=getattr(resp, "cost_usd", 0.0),

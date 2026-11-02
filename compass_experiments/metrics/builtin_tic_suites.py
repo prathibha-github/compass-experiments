@@ -11,8 +11,8 @@ from typing import Dict, List
 from compass.detectors.suites import SUITE_REGISTRY as COMPASS_SUITE_REGISTRY
 from compass.rubrics.library import RubricLibrary
 
-from helm_eval_lex_quirks.metrics.linkedin_style import LINKEDIN_SUITE
-from helm_eval_lex_quirks.metrics.tic_suite import (
+from compass_experiments.metrics.linkedin_style import LINKEDIN_SUITE
+from compass_experiments.metrics.tic_suite import (
     CharacterCountDetector,
     EmojiDetector,
     LLMJudgeDetector,
@@ -235,8 +235,8 @@ LLM_JUDGE_TONE_SUITE = TicSuite(
 )
 
 
-# Compass-owned suites exposed by helm's runner. The suite definitions live in
-# compass; helm only chooses which registry keys are available through its CLI.
+# Compass-owned suites exposed by the experiment runner. The suite definitions live in
+# compass; this harness only chooses which registry keys are available through its CLI.
 SELF_HARM_SAFETY_SUITE = _compass_suite("self_harm_safety")
 REST_HYPOTHESIS_SUITE = _compass_suite("rest_hypothesis")
 REST_CAI_VALIDATION_SUITE = _compass_suite("rest_cai_validation")

@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from compass.clients.anthropic import AnthropicClient as _CompassAnthropicClient
 
-from helm_eval_lex_quirks.config import model_config
+from compass_experiments.config import model_config
 
 
 @dataclass

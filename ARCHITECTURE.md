@@ -1,6 +1,6 @@
-# HELM Eval Lex Quirks Architecture
+# Compass Experiments Architecture
 
-`helm_eval_lex_quirks` is the execution layer that runs scenario evals, style
+`compass_experiments` is the execution layer that runs scenario evals, style
 suite evals, pairwise analysis, and reporting on top of shared Compass
 primitives.
 
@@ -9,11 +9,11 @@ primitives.
 ```mermaid
 flowchart LR
     Compass[compass<br/>shared clients rubrics detectors comparison]
-    Helm[helm_eval_lex_quirks<br/>runner scenarios reports cli]
+    Experiments[compass_experiments<br/>runner scenarios reports cli]
     Results[results and checkpoints]
 
-    Compass --> Helm
-    Helm --> Results
+    Compass --> Experiments
+    Experiments --> Results
 ```
 
 ## Main Evaluation Flow
@@ -45,13 +45,13 @@ flowchart TD
 
 ## Key Files
 
-- `helm_eval_lex_quirks/main.py`: CLI entrypoint and config wiring
-- `helm_eval_lex_quirks/runner.py`: main orchestration path
-- `helm_eval_lex_quirks/models/`: thin adapters over Compass clients
-- `helm_eval_lex_quirks/metrics/`: suite wiring, reporting helpers, pairwise logic
-- `helm_eval_lex_quirks/scenarios/`: dataset-specific loaders
+- `compass_experiments/main.py`: CLI entrypoint and config wiring
+- `compass_experiments/runner.py`: main orchestration path
+- `compass_experiments/models/`: thin adapters over Compass clients
+- `compass_experiments/metrics/`: suite wiring, reporting helpers, pairwise logic
+- `compass_experiments/scenarios/`: dataset-specific loaders
 - `phase2_benchmark.py`: focused constitutional benchmark runner
-- `report.py`: text, JSON, and safety-case report output
+- `compass_experiments/report.py`: text, JSON, and safety-case report output
 
 ## Boundaries
 

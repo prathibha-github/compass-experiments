@@ -3,8 +3,8 @@ import os
 import tempfile
 import unittest
 
-from helm_eval_lex_quirks.metrics.linkedin_style import LINKEDIN_SUITE
-from helm_eval_lex_quirks.runner import EvalRunner, TIC_CHECKPOINT_SCHEMA_VERSION
+from compass_experiments.metrics.linkedin_style import LINKEDIN_SUITE
+from compass_experiments.runner import EvalRunner, TIC_CHECKPOINT_SCHEMA_VERSION
 
 
 class TicCheckpointTests(unittest.TestCase):
@@ -74,7 +74,7 @@ class TicCheckpointTests(unittest.TestCase):
                     f.write(json.dumps(record) + "\n")
                 f.write("{not valid json}\n")
 
-            with self.assertLogs("helm_eval_lex_quirks.runner", level="WARNING") as logs:
+            with self.assertLogs("compass_experiments.runner", level="WARNING") as logs:
                 done, condition_outputs = EvalRunner._load_tic_checkpoint(path, LINKEDIN_SUITE)
 
         self.assertEqual(set(done), {("neutral", 0, 0), ("professional", 0, 0)})

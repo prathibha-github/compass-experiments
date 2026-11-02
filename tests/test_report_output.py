@@ -3,10 +3,10 @@ import os
 import tempfile
 import unittest
 
-from helm_eval_lex_quirks.report import save
-from helm_eval_lex_quirks.report import format_table
-from helm_eval_lex_quirks.report import save_safety_case
-from helm_eval_lex_quirks.runner import EvalResults, ScenarioResults
+from compass_experiments.report import save
+from compass_experiments.report import format_table
+from compass_experiments.report import save_safety_case
+from compass_experiments.runner import EvalResults, ScenarioResults
 
 
 class ReportOutputTests(unittest.TestCase):
@@ -81,7 +81,7 @@ class ReportOutputTests(unittest.TestCase):
         tic_checkpoint = summary["model-a"]["tic_suites"]["punctuation_tics"]["checkpoint_path"]
         self.assertEqual(tic_checkpoint, "results/checkpoints/model-a__punctuation.jsonl")
         self.assertIn("pairwise_preference", summary)
-        self.assertIn("HELM EVAL RESULTS", report_text)
+        self.assertIn("COMPASS EXPERIMENT RESULTS", report_text)
         self.assertIn("TIC SUITE DETECTION", report_text)
         self.assertIn("PAIRWISE PREFERENCE", report_text)
 

@@ -15,10 +15,10 @@ fi
 pip install -r "$SCRIPT_DIR/requirements-base.txt" -q
 pip install -e "$PARENT_DIR/compass" --no-deps -q
 
-# Let the venv find the helm_eval_lex_quirks package
+# Let the venv find the compass_experiments package
 PY_VER=$(.venv/bin/python3 -c "import sys; print(f'python{sys.version_info.major}.{sys.version_info.minor}')")
-echo "$SCRIPT_DIR" > "$SCRIPT_DIR/.venv/lib/$PY_VER/site-packages/helm_eval_project.pth"
+echo "$SCRIPT_DIR" > "$SCRIPT_DIR/.venv/lib/$PY_VER/site-packages/compass_experiments.pth"
 
 echo ""
 echo "Setup complete.  To run:"
-echo "  $SCRIPT_DIR/.venv/bin/python -m helm_eval_lex_quirks.main --api-key YOUR_KEY --dry-run"
+echo "  $SCRIPT_DIR/.venv/bin/python -m compass_experiments.main --api-key YOUR_KEY --dry-run"

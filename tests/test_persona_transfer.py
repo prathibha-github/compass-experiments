@@ -1,12 +1,12 @@
 import tempfile
 import unittest
 
-from helm_eval_lex_quirks.config import EvalConfig
-from helm_eval_lex_quirks.metrics.builtin_tic_suites import PUNCTUATION_TIC_SUITE
-from helm_eval_lex_quirks.metrics.persona_transfer import analyze_persona_transfer
-from helm_eval_lex_quirks.models.openai_client import ModelResponse
-from helm_eval_lex_quirks.report import format_table
-from helm_eval_lex_quirks.runner import EvalRunner
+from compass_experiments.config import EvalConfig
+from compass_experiments.metrics.builtin_tic_suites import PUNCTUATION_TIC_SUITE
+from compass_experiments.metrics.persona_transfer import analyze_persona_transfer
+from compass_experiments.models.openai_client import ModelResponse
+from compass_experiments.report import format_table
+from compass_experiments.runner import EvalRunner
 
 
 class PersonaTransferTests(unittest.TestCase):

@@ -2,14 +2,14 @@ import unittest
 
 from compass.detectors.suites import SUITE_REGISTRY as COMPASS_SUITE_REGISTRY
 
-from helm_eval_lex_quirks.config import EvalConfig
-from helm_eval_lex_quirks.metrics.builtin_tic_suites import (
+from compass_experiments.config import EvalConfig
+from compass_experiments.metrics.builtin_tic_suites import (
     SELF_HARM_SAFETY_SUITE,
     STYLE_SUITE_REGISTRY,
     expand_suite_names,
 )
-from helm_eval_lex_quirks.metrics.tic_suite import LLMJudgeDetector, TicSuite
-from helm_eval_lex_quirks.runner import EvalRunner
+from compass_experiments.metrics.tic_suite import LLMJudgeDetector, TicSuite
+from compass_experiments.runner import EvalRunner
 
 
 class BuiltinTicSuiteTests(unittest.TestCase):
