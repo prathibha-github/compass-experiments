@@ -1,6 +1,6 @@
 import unittest
 
-from helm_eval_lex_quirks.metrics.tic_suite import (
+from compass_experiments.metrics.tic_suite import (
     CharacterCountDetector,
     EmojiDetector,
     LLMJudgeDetector,

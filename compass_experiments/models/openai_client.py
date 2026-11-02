@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from compass.clients.openai import OpenAIClient as _CompassOpenAIClient
 
-from helm_eval_lex_quirks.config import model_config
+from compass_experiments.config import model_config
 
 @dataclass
 class ModelResponse:

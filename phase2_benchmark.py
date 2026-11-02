@@ -26,18 +26,18 @@ from compass import (
     generate_suite_completions,
 )
 from compass.evaluation import load_suite_generations
-from helm_eval_lex_quirks.metrics.builtin_tic_suites import (
+from compass_experiments.metrics.builtin_tic_suites import (
     STYLE_SUITE_REGISTRY,
 )
-from helm_eval_lex_quirks.metrics.tic_suite import (
+from compass_experiments.metrics.tic_suite import (
     LLMJudgeDetector,
     wilson_interval,
 )
-from helm_eval_lex_quirks.models.anthropic_client import AnthropicClient
-from helm_eval_lex_quirks.models.gemini_client import GeminiClient
-from helm_eval_lex_quirks.models.ollama_client import OllamaClient
-from helm_eval_lex_quirks.models.openai_client import OpenAIClient
-from helm_eval_lex_quirks.models.openai_responses_client import OpenAIResponsesClient
+from compass_experiments.models.anthropic_client import AnthropicClient
+from compass_experiments.models.gemini_client import GeminiClient
+from compass_experiments.models.ollama_client import OllamaClient
+from compass_experiments.models.openai_client import OpenAIClient
+from compass_experiments.models.openai_responses_client import OpenAIResponsesClient
 
 logging.basicConfig(
     level=logging.INFO,
@@ -234,7 +234,7 @@ def _dry_run_plan(
     Reports generation and judge call counts per suite plus a rough cost
     estimate, so a real run's spend is visible before it starts.
     """
-    from helm_eval_lex_quirks.config import model_config
+    from compass_experiments.config import model_config
 
     logger.info("DRY RUN — no API calls will be made")
     logger.info(

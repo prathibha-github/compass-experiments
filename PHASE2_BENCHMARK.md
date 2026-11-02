@@ -224,7 +224,7 @@ Prompts:
 ## Advanced: Custom Suites
 
 Reusable suites should be defined in `compass` first, then consumed here. Keep
-repo-local changes in `helm_eval_lex_quirks` limited to orchestration,
+repo-local changes in `compass_experiments` limited to orchestration,
 scenario loading, reporting, and one-off experiments.
 
 To add a shared suite:
@@ -252,7 +252,7 @@ Then expose it in this harness so `phase2_benchmark.py` can find it through
 `STYLE_SUITE_REGISTRY`:
 
 ```python
-# helm_eval_lex_quirks/metrics/builtin_tic_suites.py
+# compass_experiments/metrics/builtin_tic_suites.py
 from compass.detectors.suites import SUITE_REGISTRY
 
 STYLE_SUITE_REGISTRY["my_suite"] = SUITE_REGISTRY["my_suite"]
@@ -279,7 +279,7 @@ ollama serve
 ### "Unknown suite"
 Available suites: run
 ```bash
-python -c "from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY; print(list(STYLE_SUITE_REGISTRY.keys()))"
+python -c "from compass_experiments.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY; print(list(STYLE_SUITE_REGISTRY.keys()))"
 ```
 
 ### Checkpoint Corruption
@@ -301,7 +301,7 @@ python -m pytest tests/test_phase2_benchmark.py -v
 # Dry-run with mock models (no API calls)
 python -c "
 from phase2_benchmark import create_client
-from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY
+from compass_experiments.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY
 
 # Verify suite registration
 for suite_name in ['task_focus', 'truthfulness']:

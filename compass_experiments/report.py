@@ -5,8 +5,8 @@ from typing import Any, Dict, List, Tuple
 
 import yaml
 
-from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_NOTES
-from helm_eval_lex_quirks.runner import EvalResults
+from compass_experiments.metrics.builtin_tic_suites import STYLE_SUITE_NOTES
+from compass_experiments.runner import EvalResults
 
 
 def _ci_text(stats: dict, prefix: str = "pct_hit") -> str:
@@ -438,7 +438,7 @@ def format_table(results_by_model: Dict[str, EvalResults]) -> str:
     models = list(results_by_model.keys())
     snames = list(next(iter(results_by_model.values())).scenario_results.keys())
     sep    = "=" * 96
-    lines  = [sep, "  HELM EVAL RESULTS", f"  {datetime.now():%Y-%m-%d %H:%M:%S}", sep, ""]
+    lines  = [sep, "  COMPASS EXPERIMENT RESULTS", f"  {datetime.now():%Y-%m-%d %H:%M:%S}", sep, ""]
 
     _append_model_result_sections(lines, results_by_model, models, snames, sep)
     _append_tic_suite_sections(lines, results_by_model, sep)

@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import patch
 
-from helm_eval_lex_quirks.models import create_client
+from compass_experiments.models import create_client
 from tests._test_base import make_eval_config
 
 
@@ -25,21 +25,21 @@ class ModelFactoryTests(unittest.TestCase):
 
     def test_create_client_routes_gpt5_to_responses_client(self):
         cfg = self._config()
-        with patch("helm_eval_lex_quirks.models.OpenAIResponsesClient", return_value="responses") as patched:
+        with patch("compass_experiments.models.OpenAIResponsesClient", return_value="responses") as patched:
             out = create_client(cfg, "gpt-5-mini")
         self.assertEqual(out, "responses")
         patched.assert_called_once_with("openai-key", "gpt-5-mini", cfg.request_interval)
 
     def test_create_client_routes_standard_openai_model(self):
         cfg = self._config()
-        with patch("helm_eval_lex_quirks.models.OpenAIClient", return_value="chat") as patched:
+        with patch("compass_experiments.models.OpenAIClient", return_value="chat") as patched:
             out = create_client(cfg, "gpt-4o-mini")
         self.assertEqual(out, "chat")
         patched.assert_called_once_with("openai-key", "gpt-4o-mini", cfg.request_interval)
 
     def test_create_client_routes_anthropic_model(self):
         cfg = self._config()
-        with patch("helm_eval_lex_quirks.models.AnthropicClient", return_value="anthropic") as patched:
+        with patch("compass_experiments.models.AnthropicClient", return_value="anthropic") as patched:
             out = create_client(cfg, "claude-haiku-4-5-20251001")
         self.assertEqual(out, "anthropic")
         patched.assert_called_once_with("anthropic-key", "claude-haiku-4-5-20251001", cfg.request_interval)
@@ -51,7 +51,7 @@ class ModelFactoryTests(unittest.TestCase):
 
     def test_create_client_routes_gemini_model(self):
         cfg = self._config(google_api_key="fake-google-key")
-        with patch("helm_eval_lex_quirks.models.GeminiClient", return_value="gemini") as patched:
+        with patch("compass_experiments.models.GeminiClient", return_value="gemini") as patched:
             out = create_client(cfg, "gemini-2.0-flash")
         self.assertEqual(out, "gemini")
         patched.assert_called_once_with(
@@ -61,7 +61,7 @@ class ModelFactoryTests(unittest.TestCase):
 
     def test_create_client_routes_gemini_model_with_safety_override(self):
         cfg = self._config(google_api_key="fake-google-key")
-        with patch("helm_eval_lex_quirks.models.GeminiClient", return_value="gemini") as patched:
+        with patch("compass_experiments.models.GeminiClient", return_value="gemini") as patched:
             out = create_client(cfg, "gemini-2.0-flash", disable_safety_filters=True)
         self.assertEqual(out, "gemini")
         patched.assert_called_once_with(

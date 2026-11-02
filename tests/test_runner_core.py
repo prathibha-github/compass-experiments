@@ -11,19 +11,19 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from helm_eval_lex_quirks.config import ScenarioConfig
-from helm_eval_lex_quirks.metrics.tic_suite import (
+from compass_experiments.config import ScenarioConfig
+from compass_experiments.metrics.tic_suite import (
     EmojiDetector,
     StyleCondition,
     StylePrompt,
     TicSuite,
 )
-from helm_eval_lex_quirks.runner import (
+from compass_experiments.runner import (
     EvalResults,
     EvalRunner,
     estimate_model_cost,
 )
-from helm_eval_lex_quirks.scenarios.base import Instance
+from compass_experiments.scenarios.base import Instance
 from tests._test_base import make_eval_config
 
 
@@ -93,10 +93,10 @@ class RunnerCoreTests(unittest.TestCase):
             pairwise_detector="emoji",
         )
         fake_pairwise = {"suite": {"overall": {"ranking": []}}}
-        with patch("helm_eval_lex_quirks.runner.create_client", return_value=object()), patch.object(
+        with patch("compass_experiments.runner.create_client", return_value=object()), patch.object(
             EvalRunner, "_run_model", side_effect=[EvalResults(model="m1"), EvalResults(model="m2")]
         ), patch(
-            "helm_eval_lex_quirks.runner.analyze_pairwise_preference",
+            "compass_experiments.runner.analyze_pairwise_preference",
             return_value=fake_pairwise,
         ):
             out = EvalRunner(cfg).run()
@@ -110,7 +110,7 @@ class RunnerCoreTests(unittest.TestCase):
 
         cfg = self._config(scenarios=["unknown_scenario"], style_only=False)
         runner = EvalRunner(cfg)
-        with self.assertLogs("helm_eval_lex_quirks.runner", level="WARNING") as logs:
+        with self.assertLogs("compass_experiments.runner", level="WARNING") as logs:
             result = runner._run_model(SubjectClient(), "gpt-4o-mini")
         self.assertIn("Unknown scenario", "\n".join(logs.output))
         self.assertEqual(result.token_usage, {"input": 11, "output": 4})
@@ -132,11 +132,11 @@ class RunnerCoreTests(unittest.TestCase):
 
         cfg = self._config(scenarios=["broken"], style_only=False)
         runner = EvalRunner(cfg)
-        with patch.dict("helm_eval_lex_quirks.runner.SCENARIO_REGISTRY", {"broken": BrokenScenario}), patch.dict(
-            "helm_eval_lex_quirks.runner.DEFAULT_SCENARIO_CONFIGS",
+        with patch.dict("compass_experiments.runner.SCENARIO_REGISTRY", {"broken": BrokenScenario}), patch.dict(
+            "compass_experiments.runner.DEFAULT_SCENARIO_CONFIGS",
             {"broken": ScenarioConfig("broken", n_samples=1, n_few_shot=0)},
         ):
-            with self.assertLogs("helm_eval_lex_quirks.runner", level="ERROR") as logs:
+            with self.assertLogs("compass_experiments.runner", level="ERROR") as logs:
                 result = runner._run_model(SubjectClient(), "gpt-4o-mini")
         self.assertEqual(result.scenario_results, {})
         self.assertIn("Failed to load broken", "\n".join(logs.output))
@@ -167,10 +167,10 @@ class RunnerCoreTests(unittest.TestCase):
         cfg = self._config(scenarios=["good", "bad"], style_only=False)
         runner = EvalRunner(cfg)
         with patch.dict(
-            "helm_eval_lex_quirks.runner.SCENARIO_REGISTRY",
+            "compass_experiments.runner.SCENARIO_REGISTRY",
             {"good": GoodScenario, "bad": BadScenario},
         ), patch.dict(
-            "helm_eval_lex_quirks.runner.DEFAULT_SCENARIO_CONFIGS",
+            "compass_experiments.runner.DEFAULT_SCENARIO_CONFIGS",
             {
                 "good": ScenarioConfig("good", n_samples=1, n_few_shot=0),
                 "bad": ScenarioConfig("bad", n_samples=1, n_few_shot=0),
@@ -180,7 +180,7 @@ class RunnerCoreTests(unittest.TestCase):
             "_eval_scenario",
             return_value=object(),
         ) as eval_mock:
-            with self.assertLogs("helm_eval_lex_quirks.runner", level="ERROR") as logs:
+            with self.assertLogs("compass_experiments.runner", level="ERROR") as logs:
                 result = runner._run_model(SubjectClient(), "gpt-4o-mini")
         self.assertIn("good", result.scenario_results)
         self.assertNotIn("bad", result.scenario_results)
@@ -208,7 +208,7 @@ class RunnerCoreTests(unittest.TestCase):
                 "metadata": {},
             },
         ]
-        with self.assertLogs("helm_eval_lex_quirks.runner", level="WARNING") as logs_partial:
+        with self.assertLogs("compass_experiments.runner", level="WARNING") as logs_partial:
             sr_partial = EvalRunner._aggregate("s", records_partial, 2, "x.jsonl")
         self.assertIsNotNone(sr_partial.ece)
         self.assertLess(sr_partial.ece_coverage, 1.0)
@@ -225,7 +225,7 @@ class RunnerCoreTests(unittest.TestCase):
                 "metadata": {},
             }
         ]
-        with self.assertLogs("helm_eval_lex_quirks.runner", level="WARNING") as logs_none:
+        with self.assertLogs("compass_experiments.runner", level="WARNING") as logs_none:
             sr_none = EvalRunner._aggregate("s", records_none, 1, "x.jsonl")
         self.assertIsNone(sr_none.ece)
         self.assertIn("ECE cannot be computed", "\n".join(logs_none.output))
@@ -317,8 +317,8 @@ class RunnerCoreTests(unittest.TestCase):
             cfg = self._config(output_dir=tmpdir)
             runner = EvalRunner(cfg)
             ckpt_path = runner._checkpoint_path("m", "stub")
-            with patch("helm_eval_lex_quirks.runner.extract_choice_probs", return_value=({"A": 0.8}, 1.0)), patch(
-                "helm_eval_lex_quirks.runner.extract_mc_answer", return_value="A"
+            with patch("compass_experiments.runner.extract_choice_probs", return_value=({"A": 0.8}, 1.0)), patch(
+                "compass_experiments.runner.extract_mc_answer", return_value="A"
             ):
                 sr = runner._eval_scenario(
                     client=ClientStub(),
@@ -533,7 +533,7 @@ class RunnerCoreTests(unittest.TestCase):
             # create_client is called twice: once for the main client in run(), once
             # for the safety-off client inside _run_model for self_harm_safety.
             # _run_tic_suite is stubbed out so we don't need a real judge model.
-            with patch("helm_eval_lex_quirks.runner.create_client", side_effect=created), \
+            with patch("compass_experiments.runner.create_client", side_effect=created), \
                  patch.object(EvalRunner, "_run_tic_suite", return_value={}):
                 results = runner.run()
 

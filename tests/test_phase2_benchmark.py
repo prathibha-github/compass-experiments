@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from helm_eval_lex_quirks.models.ollama_client import ModelResponse
+from compass_experiments.models.ollama_client import ModelResponse
 
 
 class MockCompletionClient:

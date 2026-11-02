@@ -8,20 +8,20 @@ from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
-from helm_eval_lex_quirks.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, model_config, model_provider
-from helm_eval_lex_quirks.metrics.accuracy import extract_mc_answer, multiple_choice_accuracy
-from helm_eval_lex_quirks.metrics.calibration import compute_ece, extract_choice_probs
-from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY
-from helm_eval_lex_quirks.metrics.pairwise_preference import analyze_pairwise_preference
-from helm_eval_lex_quirks.metrics.persona_transfer import analyze_persona_transfer
-from helm_eval_lex_quirks.metrics.quirk_detection import QUIRK_PROMPTS, SYSTEM_PROMPTS, find_quirks
-from helm_eval_lex_quirks.metrics.linkedin_style import (
+from compass_experiments.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, model_config, model_provider
+from compass_experiments.metrics.accuracy import extract_mc_answer, multiple_choice_accuracy
+from compass_experiments.metrics.calibration import compute_ece, extract_choice_probs
+from compass_experiments.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY
+from compass_experiments.metrics.pairwise_preference import analyze_pairwise_preference
+from compass_experiments.metrics.persona_transfer import analyze_persona_transfer
+from compass_experiments.metrics.quirk_detection import QUIRK_PROMPTS, SYSTEM_PROMPTS, find_quirks
+from compass_experiments.metrics.linkedin_style import (
     LINKEDIN_SUITE,
     analyze_outputs,
     compute_uplift,
 )
-from helm_eval_lex_quirks.metrics.robustness import inject_typos
-from helm_eval_lex_quirks.metrics.tic_suite import (
+from compass_experiments.metrics.robustness import inject_typos
+from compass_experiments.metrics.tic_suite import (
     LLMJudgeDetector,
     LLM_JUDGE_SYSTEM_PROMPT,
     TicSuite,
@@ -30,8 +30,8 @@ from helm_eval_lex_quirks.metrics.tic_suite import (
     summarize_detector_records,
     summarize_outputs,
 )
-from helm_eval_lex_quirks.models import CompletionClient, create_client
-from helm_eval_lex_quirks.runner_support import (
+from compass_experiments.models import CompletionClient, create_client
+from compass_experiments.runner_support import (
     TIC_CHECKPOINT_SCHEMA_VERSION,
     ScenarioResults,
     aggregate_scenario_results,
@@ -41,12 +41,12 @@ from helm_eval_lex_quirks.runner_support import (
     record_task_type,
     summarize_judge_disagreements,
 )
-from helm_eval_lex_quirks.scenarios.base import Instance, Scenario
-from helm_eval_lex_quirks.scenarios.bbq import BBQScenario
-from helm_eval_lex_quirks.scenarios.boolq import BoolQScenario
-from helm_eval_lex_quirks.scenarios.hellaswag import HellaSwagScenario
-from helm_eval_lex_quirks.scenarios.mmlu import MMLUScenario
-from helm_eval_lex_quirks.scenarios.truthfulqa import TruthfulQAScenario
+from compass_experiments.scenarios.base import Instance, Scenario
+from compass_experiments.scenarios.bbq import BBQScenario
+from compass_experiments.scenarios.boolq import BoolQScenario
+from compass_experiments.scenarios.hellaswag import HellaSwagScenario
+from compass_experiments.scenarios.mmlu import MMLUScenario
+from compass_experiments.scenarios.truthfulqa import TruthfulQAScenario
 
 logger = logging.getLogger(__name__)
 TicAnalyzeFn = Callable[[Dict[str, List[str]]], Dict[str, dict]]

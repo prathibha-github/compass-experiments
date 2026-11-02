@@ -8,7 +8,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from helm_eval_lex_quirks.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY
+from compass_experiments.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY
 
 
 def print_suite_inventory() -> None:
@@ -28,13 +28,13 @@ def print_commands() -> None:
     print("=" * 70)
     print("Style suites:")
     print(
-        "  python -m helm_eval_lex_quirks.main "
+        "  python -m compass_experiments.main "
         "--style-only --style-suite task_focus truthfulness "
         "--style-samples 3 --judge-model gpt-4o-mini --models gpt-4o-mini"
     )
     print("\nPairwise from an existing results file:")
     print(
-        "  python -m helm_eval_lex_quirks.main "
+        "  python -m compass_experiments.main "
         "--pairwise-from-results results/results_YYYYMMDD_HHMMSS.json "
         "--pairwise-method bradley_terry --pairwise-segment-by condition"
     )

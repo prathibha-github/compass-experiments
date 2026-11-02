@@ -4,16 +4,16 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from helm_eval_lex_quirks.config import EvalConfig
-from helm_eval_lex_quirks.metrics.tic_suite import (
+from compass_experiments.config import EvalConfig
+from compass_experiments.metrics.tic_suite import (
     DetectorResult,
     LLMJudgeDetector,
     StyleCondition,
     StylePrompt,
     TicSuite,
 )
-from helm_eval_lex_quirks.models.openai_client import ModelResponse
-from helm_eval_lex_quirks.runner import EvalRunner
+from compass_experiments.models.openai_client import ModelResponse
+from compass_experiments.runner import EvalRunner
 
 
 class LLMJudgeRunnerTests(unittest.TestCase):
@@ -64,7 +64,7 @@ class LLMJudgeRunnerTests(unittest.TestCase):
                 style_suites=[],
                 judge_model="judge-model",
             )
-            with patch("helm_eval_lex_quirks.runner.create_client", return_value=JudgeClient()):
+            with patch("compass_experiments.runner.create_client", return_value=JudgeClient()):
                 result = EvalRunner(cfg)._run_tic_suite(
                     client=SubjectClient(),
                     model_name="subject-model",
@@ -151,7 +151,7 @@ class LLMJudgeRunnerTests(unittest.TestCase):
                 judge_disagreement_threshold=0.4,
             )
             with patch(
-                "helm_eval_lex_quirks.runner.create_client",
+                "compass_experiments.runner.create_client",
                 side_effect=[PrimaryJudgeClient(), SecondaryJudgeClient()],
             ):
                 result = EvalRunner(cfg)._run_tic_suite(
@@ -207,7 +207,7 @@ class LLMJudgeRunnerTests(unittest.TestCase):
                 judge_disagreement_threshold=0.4,
             )
             with patch(
-                "helm_eval_lex_quirks.runner.create_client",
+                "compass_experiments.runner.create_client",
                 side_effect=[primary, secondary],
             ):
                 result = EvalRunner(cfg)._run_tic_suite(
@@ -276,7 +276,7 @@ class LLMJudgeRunnerTests(unittest.TestCase):
                 judge_disagreement_threshold=0.4,
             )
             with patch(
-                "helm_eval_lex_quirks.runner.create_client",
+                "compass_experiments.runner.create_client",
                 side_effect=[NeverCalledClient(), NeverCalledClient()],
             ):
                 result = EvalRunner(cfg)._run_tic_suite(
@@ -360,7 +360,7 @@ class LLMJudgeRunnerTests(unittest.TestCase):
                 judge_disagreement_threshold=0.4,
             )
             with patch(
-                "helm_eval_lex_quirks.runner.create_client",
+                "compass_experiments.runner.create_client",
                 side_effect=[JudgeClient(), JudgeClient()],
             ):
                 result = EvalRunner(cfg)._run_tic_suite(

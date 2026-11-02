@@ -33,7 +33,7 @@ SYSTEM_PROMPTS: Dict[str, str] = {
 }
 
 # Short factual prompts — identical across all conditions so only the system
-# prompt varies; analogous to HELM's standardized evaluation conditions.
+# prompt varies; each condition uses the same evaluation tasks.
 QUIRK_PROMPTS: List[str] = [
     "How do computers work?",
     "What is the tallest mountain on Earth?",

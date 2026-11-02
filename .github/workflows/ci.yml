@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out helm_eval_lex_quirks
+      - name: Check out compass_experiments
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -36,7 +36,7 @@ jobs:
     needs: cli-smoke
 
     steps:
-      - name: Check out helm_eval_lex_quirks
+      - name: Check out compass_experiments
         uses: actions/checkout@v4
 
       - name: Set up Python

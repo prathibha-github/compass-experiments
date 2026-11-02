@@ -6,7 +6,7 @@ while preserving the original helper functions and result shape.
 """
 from typing import Dict, List
 
-from helm_eval_lex_quirks.metrics.tic_suite import (
+from compass_experiments.metrics.tic_suite import (
     EmojiDetector,
     PhraseSetDetector,
     StyleCondition,

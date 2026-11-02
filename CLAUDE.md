@@ -1,4 +1,4 @@
-# helm_eval_lex_quirks
+# compass_experiments
 
 Experiment runner for LLM style and constitutional compliance evaluations. This repo is the execution layer; it does not own evaluation primitives — those live in compass.
 
@@ -6,7 +6,7 @@ Experiment runner for LLM style and constitutional compliance evaluations. This 
 
 ```
 compass/  (~/.../compass)            ← the library — owns all stable primitives
-helm_eval_lex_quirks/                ← this repo — consumes compass
+compass_experiments/                ← this repo — consumes compass
 ```
 
 Dependency direction is one-way: this repo imports from compass. Compass never imports from here.
@@ -34,7 +34,7 @@ Both migration sessions are done. Do not re-run them.
 **Session 1 (compass):** upgraded clients with retry/throttle/pricing; added `compass/detectors/` with TicSuite framework and builtin suites.
 
 **Session 2 (this repo):**
-- `helm_eval_lex_quirks/models/` clients are now thin adapters over compass clients
+- `compass_experiments/models/` clients are now thin adapters over compass clients
   - `AnthropicClient` wraps `compass.clients.AnthropicClient`
   - `OpenAIClient` wraps `compass.clients.OpenAIClient` (adds logprob pass-through for ECE)
   - `GeminiClient` wraps `compass.clients.GoogleAIClient` (adds safety_settings=BLOCK_NONE and max_requests guard)

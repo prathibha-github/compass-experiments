@@ -4,9 +4,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from helm_eval_lex_quirks.models.gemini_client import GeminiClient
-from helm_eval_lex_quirks.models.openai_client import OpenAIClient
-from helm_eval_lex_quirks.models.openai_responses_client import OpenAIResponsesClient
+from compass_experiments.models.gemini_client import GeminiClient
+from compass_experiments.models.openai_client import OpenAIClient
+from compass_experiments.models.openai_responses_client import OpenAIResponsesClient
 
 
 class OpenAIWrapperTests(unittest.TestCase):
@@ -23,7 +23,7 @@ class OpenAIWrapperTests(unittest.TestCase):
         inner.total_cost_usd = 0.02
 
         with patch(
-            "helm_eval_lex_quirks.models.openai_client._CompassOpenAIClient",
+            "compass_experiments.models.openai_client._CompassOpenAIClient",
             return_value=inner,
         ):
             client = OpenAIClient("openai-key", "gpt-4o-mini", request_interval=0.5)
@@ -64,7 +64,7 @@ class OpenAIResponsesWrapperTests(unittest.TestCase):
         )
 
         with patch(
-            "helm_eval_lex_quirks.models.openai_responses_client._CompassOpenAIResponsesClient",
+            "compass_experiments.models.openai_responses_client._CompassOpenAIResponsesClient",
             return_value=inner,
         ) as patched:
             client = OpenAIResponsesClient("openai-key", "gpt-5-mini", 0.5)
@@ -99,7 +99,7 @@ class OpenAIResponsesWrapperTests(unittest.TestCase):
 
     def test_non_gpt5_responses_model_uses_default_output_multiplier(self):
         with patch(
-            "helm_eval_lex_quirks.models.openai_responses_client._CompassOpenAIResponsesClient",
+            "compass_experiments.models.openai_responses_client._CompassOpenAIResponsesClient",
         ) as patched:
             OpenAIResponsesClient("openai-key", "gpt-4o-mini", 0.5)
 
@@ -126,7 +126,7 @@ class GeminiWrapperTests(unittest.TestCase):
         inner.total_cost_usd = 0.015
 
         with patch(
-            "helm_eval_lex_quirks.models.gemini_client._CompassGoogleAIClient",
+            "compass_experiments.models.gemini_client._CompassGoogleAIClient",
             return_value=inner,
         ) as patched:
             client = GeminiClient(

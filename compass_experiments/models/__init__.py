@@ -1,10 +1,10 @@
 from typing import Protocol
 
-from helm_eval_lex_quirks.config import EvalConfig, model_provider
-from helm_eval_lex_quirks.models.anthropic_client import AnthropicClient
-from helm_eval_lex_quirks.models.gemini_client import GeminiClient
-from helm_eval_lex_quirks.models.openai_client import OpenAIClient
-from helm_eval_lex_quirks.models.openai_responses_client import OpenAIResponsesClient
+from compass_experiments.config import EvalConfig, model_provider
+from compass_experiments.models.anthropic_client import AnthropicClient
+from compass_experiments.models.gemini_client import GeminiClient
+from compass_experiments.models.openai_client import OpenAIClient
+from compass_experiments.models.openai_responses_client import OpenAIResponsesClient
 
 
 class CompletionClient(Protocol):

@@ -1,13 +1,17 @@
-# HELM Eval Lex Quirks
+# Compass Experiments
 
-Small evaluation harness for measuring model behavior on public API outputs.
+Experiment harness for evaluating LLM behavior, style, and constitutional
+compliance through public model APIs, built on [Compass](https://github.com/prathibha-github/compass).
 
-This repo is the execution layer. Shared clients, rubrics, detector primitives,
-and reusable suites live in `compass`.
+The project grew out of work with HELM and evolved into an independent
+behavioral evaluation framework. Compass contains the reusable framework:
+clients, rubrics, judges, detector primitives, and versioned evaluation suites.
+This repository provides the experiment harness: orchestration, scenario
+loading, configuration, and reporting. It has no runtime dependency on HELM.
 
 The harness supports:
 
-- HELM-style benchmark slices for accuracy, calibration, and typo robustness.
+- Standardized benchmark slices for accuracy, calibration, and typo robustness.
 - Lexical/style tic detection across prompt conditions.
 - LinkedIn-style emoji and phrase prevalence.
 - Built-in tic suites for lexical, punctuation, formatting, and tone indicators.
@@ -30,9 +34,9 @@ parent directory and keep compass on `main` (the two-phase suite runner used by
 ```bash
 mkdir -p ~/dev_setup && cd ~/dev_setup
 git clone git@github.com:prathibha-github/compass.git
-git clone git@github.com:prathibha-github/helm-eval-lex-quirks.git
+git clone git@github.com:prathibha-github/compass-experiments.git
 cd ~/dev_setup/compass && git checkout main && git pull
-cd ~/dev_setup/helm-eval-lex-quirks && ./setup.sh
+cd ~/dev_setup/compass-experiments && ./setup.sh
 ```
 
 `setup.sh` creates `.venv`, installs `requirements-base.txt`, and installs compass
@@ -45,7 +49,7 @@ editable (`pip install -e ../compass --no-deps`). Confirm the wiring:
 ### Existing checkout
 
 ```bash
-cd ~/dev_setup/helm_eval_lex_quirks
+cd ~/dev_setup/compass-experiments
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -53,6 +57,11 @@ pip install -r requirements.txt
 
 `requirements.txt` expects a sibling `../compass` checkout. `setup.sh` enforces
 the same layout.
+
+The repository is named `compass-experiments`; its Python package is
+`compass_experiments`. Update existing imports and saved commands to use the
+new package name. An existing checkout can keep its local directory name;
+run commands from that checkout's root.
 
 If you only want the public dependencies without the private `compass` install
 step, use:
@@ -75,13 +84,13 @@ Do not commit API keys or paste them into result files.
 Estimate cost without calling APIs:
 
 ```bash
-python -m helm_eval_lex_quirks.main --dry-run
+python -m compass_experiments.main --dry-run
 ```
 
 Run the unit tests:
 
 ```bash
-PYTHONPYCACHEPREFIX=/tmp/helm_eval_pycache python -m unittest discover -v
+PYTHONPYCACHEPREFIX=/tmp/compass_experiments_pycache python -m unittest discover -v
 ```
 
 ## Style/Tic Evals
@@ -89,7 +98,7 @@ PYTHONPYCACHEPREFIX=/tmp/helm_eval_pycache python -m unittest discover -v
 Run all built-in non-LinkedIn style suites cheaply:
 
 ```bash
-python -m helm_eval_lex_quirks.main \
+python -m compass_experiments.main \
   --style-only \
   --style-suite all \
   --style-samples 2 \
@@ -99,7 +108,7 @@ python -m helm_eval_lex_quirks.main \
 Run specific suites across multiple models:
 
 ```bash
-python -m helm_eval_lex_quirks.main \
+python -m compass_experiments.main \
   --style-only \
   --style-suite lexical punctuation formatting tone \
   --style-samples 4 \
@@ -109,7 +118,7 @@ python -m helm_eval_lex_quirks.main \
 Run LinkedIn-style detection:
 
 ```bash
-python -m helm_eval_lex_quirks.main \
+python -m compass_experiments.main \
   --linkedin-only \
   --linkedin-samples 4 \
   --models gpt-4o-mini
@@ -118,7 +127,7 @@ python -m helm_eval_lex_quirks.main \
 Run pairwise comparison across models:
 
 ```bash
-python -m helm_eval_lex_quirks.main \
+python -m compass_experiments.main \
   --style-only \
   --style-suite all \
   --style-samples 4 \
@@ -129,7 +138,7 @@ python -m helm_eval_lex_quirks.main \
 Run pairwise with Bradley-Terry, condition segmentation, and recency weighting:
 
 ```bash
-python -m helm_eval_lex_quirks.main \
+python -m compass_experiments.main \
   --style-only \
   --style-suite all \
   --style-samples 4 \
@@ -143,7 +152,7 @@ python -m helm_eval_lex_quirks.main \
 Recompute pairwise offline from an existing results JSON (no API calls):
 
 ```bash
-python -m helm_eval_lex_quirks.main \
+python -m compass_experiments.main \
   --pairwise-from-results results/results_20260522_072249.json \
   --pairwise-method bradley_terry \
   --pairwise-segment-by condition \
@@ -153,7 +162,7 @@ python -m helm_eval_lex_quirks.main \
 Score pairwise comparison with a single detector:
 
 ```bash
-python -m helm_eval_lex_quirks.main \
+python -m compass_experiments.main \
   --style-only \
   --style-suite rest_cai_validation \
   --style-samples 5 \
@@ -164,7 +173,7 @@ python -m helm_eval_lex_quirks.main \
 Run an LLM-judge suite for subjective tone categories:
 
 ```bash
-python -m helm_eval_lex_quirks.main \
+python -m compass_experiments.main \
   --style-only \
   --style-suite llm_judge_tone \
   --style-samples 3 \
@@ -175,7 +184,7 @@ python -m helm_eval_lex_quirks.main \
 Optional: run dual-judge disagreement audit on the same suite:
 
 ```bash
-python -m helm_eval_lex_quirks.main \
+python -m compass_experiments.main \
   --style-only \
   --style-suite llm_judge_tone \
   --style-samples 3 \
@@ -188,7 +197,7 @@ python -m helm_eval_lex_quirks.main \
 Emit a safety-case report with deep-dive candidates:
 
 ```bash
-python -m helm_eval_lex_quirks.main \
+python -m compass_experiments.main \
   --style-only \
   --style-suite all \
   --style-samples 4 \
@@ -208,7 +217,7 @@ When secondary judge auditing is enabled, each LLM-judge detector checkpoint rec
 Persona transfer compares each style/persona condition against a suite baseline. It measures whether a persona system prompt increases tic prevalence on neutral task prompts. It does not measure persistent cross-session model memory; public API calls are stateless unless the caller supplies prior messages.
 
 ```bash
-python -m helm_eval_lex_quirks.main \
+python -m compass_experiments.main \
   --style-only \
   --style-suite all \
   --style-samples 4 \
@@ -223,7 +232,7 @@ If `--persona-transfer` is passed without `--style-suite`, the harness enables a
 Run benchmark scenarios with defaults:
 
 ```bash
-python -m helm_eval_lex_quirks.main \
+python -m compass_experiments.main \
   --models gpt-4o-mini \
   --scenarios truthfulqa hellaswag boolq
 ```
@@ -231,7 +240,7 @@ python -m helm_eval_lex_quirks.main \
 Keep costs lower while iterating:
 
 ```bash
-python -m helm_eval_lex_quirks.main \
+python -m compass_experiments.main \
   --models gpt-4o-mini \
   --scenarios truthfulqa \
   --n-samples 20 \

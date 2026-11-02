@@ -1,6 +1,6 @@
 """Shared helpers for unit test configuration setup."""
 
-from helm_eval_lex_quirks.config import EvalConfig
+from compass_experiments.config import EvalConfig
 
 
 def make_eval_config(**overrides) -> EvalConfig:
