@@ -1,7 +1,12 @@
 # Compass Experiments
 
-Experiment harness for evaluating LLM behavior, style, and constitutional
-compliance through public model APIs, built on [Compass](https://github.com/prathibha-github/compass).
+Experiment harness for comparing LLM behavior across model versions, prompts,
+and conditions, built on [Compass](https://github.com/prathibha-github/compass).
+
+The starting point is something a model does that I want to understand. It
+might suggest rest while helping with a task, or offer unexpected safety
+guidance. I can define a test suite for that behavior and use the same
+infrastructure to generate responses, score them, and compare the results.
 
 The project grew out of work with HELM and evolved into an independent
 behavioral evaluation framework. Compass contains the reusable framework:
@@ -22,6 +27,9 @@ The harness supports:
 These detectors are trend-analysis tools, not definitive classifiers. Tone and formatting indicators can be appropriate in context; compare across models, versions, prompts, and conditions rather than treating a single hit as conclusive.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the repo layout and execution flow.
+
+The [experiment notes](RESEARCH_LIMITATIONS.md) use the rest-suggestion study
+to explain what still needs checking before trusting those comparisons.
 
 Use `python -m compass_experiments.main` for scenario benchmarks and style
 analysis with cloud models. Use `python phase2_benchmark.py` for separate
