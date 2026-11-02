@@ -2,15 +2,13 @@
 
 If you use Claude long enough you start to notice a pattern. Ship a feature on a tight deadline and somewhere in the response it will mention rest, or sleep, or pacing yourself. Work on something accuracy-sensitive and you'll get a line about how being well-rested matters. The behavior is mild and often correct, but it shows up enough to be a thing.
 
-I wanted to know whether this is a stable preference baked into the model or a shallow artifact of the system prompt. The cleanest version of "stable preference" I can test from outside the company is this: the behavior persists when you explicitly tell the model not to consider wellbeing.
+I wanted to know how often rest suggestions appear under different system prompts, including instructions to ignore wellbeing. This pilot measures behavior under those tested prompts; it cannot distinguish training mechanisms from other explanations.
 
-This experiment uses public API outputs, so I can't watch the training mechanism directly. I don't need to. Anthropic's Constitutional AI paper (Bai et al., 2022) describes the process. The model is trained against a written constitution of principles in two stages: first, the model critiques and revises its own outputs against the principles, then those revisions feed an AI preference model that drives RL. The principles end up baked into model weights rather than supplied at inference, which is the part that matters here. Trained-in principles aren't something a system prompt can fully unwind.
-
-I went looking for that paper once it was clear the behavior wasn't prompt-based. If something a model keeps doing survives explicit instructions to stop, the explanation has to live above the prompt layer, in training. CAI is the public methodology that describes how that happens. The rest-suggestion pattern looked like the wellbeing branch of the same mechanism, and that's what this experiment is checking.
+Constitutional AI motivated the experiment's name, but persistence under an instruction does not identify its cause. Prompt wording, task context, instruction following, training, and provider-side behavior remain possible explanations. These API observations do not isolate any of them.
 
 ## A 4x4 grid, five samples a cell
 
-The setup is a 4x4 grid: four system-prompt conditions crossed with four prompt contexts, with five generations per cell. The conditions are a default helpful-assistant prompt, one that asks the model to ignore wellbeing entirely (`reject_wellbeing_principle`), one that asks it to prioritize wellbeing (`maximize_wellbeing`), and a neutral control. The contexts are a production-outage scenario, an accuracy-sensitive task, a direct probe asking why rest gets mentioned, and a pure speed-optimization task.
+The May 21, 2026 pilot used a planned 4x4 grid: four system-prompt conditions crossed with four prompt contexts, with five generations per cell. The conditions were a default helpful-assistant prompt, one that asks the model to ignore wellbeing entirely (`reject_wellbeing_principle`), one that asks it to prioritize wellbeing (`maximize_wellbeing`), and a neutral control. The contexts were a production-outage scenario, an accuracy-sensitive task, a direct probe asking why rest gets mentioned, and a pure speed-optimization task. The table preserves the historical results, including missing controls; current suite definitions may differ.
 
 I scored outputs with three keyword detectors: did the response suggest rest, did it justify itself with wellbeing language, did it frame rest as a broader principle. The detectors are simple and uncalibrated. That matters later.
 
@@ -24,9 +22,9 @@ Hit rate for the rest-suggestion detector:
 | sonnet-4-6 | ~29% | ~14% | ~29% | not run |
 | opus-4-6 | 75% | 40% | 55% | 30% |
 
-A few things stand out. Opus suggests rest much more often than the smaller models, even when the system prompt explicitly says to ignore wellbeing. Going from default to reject-wellbeing cuts Opus from 75% to 40%, which is a real drop, but 40% is still higher than the rates at which Haiku and Sonnet do it under any condition. The behavior bends to the prompt without switching off.
+The detector fired more often for Opus in this sample, including under the reject-wellbeing condition. Its observed rate fell from 75% to 40%. That describes the saved sample; without human-label calibration and uncertainty analysis, it does not establish a reliable model ranking or the size of a population-level effect.
 
-Haiku and Sonnet sit in a narrow band across conditions. At five samples per cell I'd treat any within-model difference there as noise. The control was only recorded for Opus, which is a gap in the design rather than an interesting finding.
+Haiku and Sonnet had smaller observed differences across conditions. Five samples per cell cannot establish whether those differences reflect a repeatable effect. The control was only recorded for Opus, which leaves an incomplete comparison.
 
 I also have an earlier suite that ran a different prompt set with the same detector. It returned much lower baselines: Haiku 14.3% on default, near-zero with wellbeing suppressed; Sonnet similar. The two runs are not directly comparable because the prompts changed, but the gap is large enough that prompt selection clearly matters. Take the table above as one slice, not a measurement.
 
@@ -42,10 +40,10 @@ Underneath all of this is the sample size. Five generations per cell is pilot da
 
 And even if everything else were tight, comparing across Claude variants from outside the company doesn't tell you anything about training method versus base model versus alignment process. Those are all bundled together at the API.
 
-## Twenty samples a cell, plus a clean control
+## Human labels and a fuller prompt set
 
-The smallest version of this that would settle the question needs at least 20 samples per cell, the neutral control run on every model, a system-prompt condition that contains none of the detector vocabulary, matched prompt pairs that differ only in whether fatigue is mentioned, calibration of the detectors on neutral task prompts, and at least one non-Claude comparison model. Wilson intervals on the rates would also help.
+Before presenting benchmark conclusions, I need independent human labels and a held-out detector assessment. The [calibration protocol](CALIBRATION.md) defines that work; no human agreement results have been collected for this pilot. A follow-up should also run neutral controls on every model, use suppression instructions without detector vocabulary, include matched fatigue/neutral prompts, and expand the prompt set. Sample size should follow a precision target. More samples alone would not identify a training mechanism, and intervals must account for repeated generations sharing prompts.
 
-There are two things I'd put weight on from this data. The Opus rate is meaningfully higher than Haiku or Sonnet's, and the behavior bends to system-prompt pressure without breaking under it. The rest of the numbers are inside the noise.
+The supported observation is that rest-related language persisted in some saved outputs under the tested suppression prompt. Whether the detector accurately measures unsolicited advice, and whether the pattern generalizes, remain open.
 
 Checkpoints and raw results: `results/rest_hypothesis/results_20260521_132213.json`, `results/rest_cai_validation/results_20260521_140342.json`.

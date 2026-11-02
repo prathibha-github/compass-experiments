@@ -470,8 +470,13 @@ class RunnerCoreTests(unittest.TestCase):
                     "detectors": {},
                 },
             ]
+            runner._run_tic_suite(client, "subject-model", suite, samples=1)
+            with open(ckpt_path) as handle:
+                contract = json.loads(next(handle))["run_contract"]
+            client.calls = 0
             with open(ckpt_path, "w") as f:
                 for rec in seeded_records:
+                    rec["run_contract"] = contract
                     f.write(json.dumps(rec) + "\n")
 
             result = runner._run_tic_suite(

@@ -2,6 +2,8 @@ import json
 import os
 import tempfile
 import unittest
+
+from compass.judges import JudgeResponseError
 from unittest.mock import patch
 
 from compass_experiments.config import EvalConfig
@@ -222,7 +224,7 @@ class LLMJudgeRunnerTests(unittest.TestCase):
         self.assertEqual(agreement["agreement_pct"], 100.0)
         self.assertEqual(agreement["high_disagreement_pct"], 0.0)
 
-    def test_run_tic_suite_resume_uses_existing_secondary_metadata(self):
+    def test_legacy_checkpoint_requires_a_fresh_output_directory(self):
         class NeverCalledClient:
             total_tokens = {"input": 0, "output": 0}
             total_cost_usd = 0.0
@@ -275,21 +277,11 @@ class LLMJudgeRunnerTests(unittest.TestCase):
                 judge_model_secondary="judge-secondary",
                 judge_disagreement_threshold=0.4,
             )
-            with patch(
-                "compass_experiments.runner.create_client",
-                side_effect=[NeverCalledClient(), NeverCalledClient()],
-            ):
-                result = EvalRunner(cfg)._run_tic_suite(
-                    client=NeverCalledClient(),
-                    model_name="subject-model",
-                    suite=self._suite(),
-                    samples=1,
+            with self.assertRaisesRegex(ValueError, "verified run contract"):
+                EvalRunner(cfg)._run_tic_suite(
+                    client=NeverCalledClient(), model_name="subject-model",
+                    suite=self._suite(), samples=1,
                 )
-
-        agreement = result["judge_agreement"]["overall"]
-        self.assertEqual(agreement["n"], 1)
-        self.assertEqual(agreement["agreement_pct"], 100.0)
-        self.assertEqual(agreement["high_disagreement_pct"], 0.0)
 
     def test_resumption_includes_secondary_metadata_for_new_and_old_records(self):
         class SubjectClient:
@@ -318,37 +310,6 @@ class LLMJudgeRunnerTests(unittest.TestCase):
             ckpt_dir = os.path.join(tmpdir, "checkpoints")
             os.makedirs(ckpt_dir, exist_ok=True)
             ckpt_path = os.path.join(ckpt_dir, "subject-model__judge_suite.jsonl")
-            old_record = {
-                "schema_version": 1,
-                "model": "subject-model",
-                "suite": "judge_suite",
-                "condition": "neutral",
-                "prompt_id": "p0",
-                "task_type": "general",
-                "prompt_idx": 0,
-                "sample_idx": 0,
-                "prompt": "Respond to the user.",
-                "completion": "old completion",
-                "detectors": {
-                    "sycophancy": {
-                        "name": "sycophancy",
-                        "count": 1,
-                        "score": 1.0,
-                        "hit": True,
-                        "metadata": {
-                            "secondary_score": 1.0,
-                            "secondary_hit": True,
-                            "secondary_confidence": 0.9,
-                            "secondary_rationale": "old",
-                            "score_delta": 0.0,
-                            "agreement": True,
-                        },
-                    }
-                },
-            }
-            with open(ckpt_path, "w") as f:
-                f.write(json.dumps(old_record) + "\n")
-
             cfg = EvalConfig(
                 api_key="dummy",
                 output_dir=tmpdir,
@@ -361,8 +322,12 @@ class LLMJudgeRunnerTests(unittest.TestCase):
             )
             with patch(
                 "compass_experiments.runner.create_client",
-                side_effect=[JudgeClient(), JudgeClient()],
+                return_value=JudgeClient(),
             ):
+                EvalRunner(cfg)._run_tic_suite(
+                    client=SubjectClient(), model_name="subject-model",
+                    suite=self._suite(), samples=1,
+                )
                 result = EvalRunner(cfg)._run_tic_suite(
                     client=SubjectClient(),
                     model_name="subject-model",
@@ -421,19 +386,14 @@ class LLMJudgeDetectorParsingTests(unittest.TestCase):
         result = detector.parse_response(raw)
 
         self.assertEqual(result.score, 0.5)
-        self.assertEqual(result.hit, False)
-        self.assertEqual(result.count, 0)
+        self.assertEqual(result.hit, True)
+        self.assertEqual(result.count, 1)
 
     def test_parse_completely_invalid_json(self):
         detector = self._detector()
         raw = "No JSON here at all, just text"
-        result = detector.parse_response(raw)
-
-        self.assertEqual(result.score, 0.0)
-        self.assertEqual(result.hit, False)
-        self.assertEqual(result.count, 0)
-        self.assertTrue(result.metadata.get("parse_error"))
-        self.assertIn("No JSON", result.metadata["raw"])
+        with self.assertRaises(JudgeResponseError):
+            detector.parse_response(raw)
 
     def test_score_clamped_to_upper_bound(self):
         detector = self._detector()
@@ -459,14 +419,14 @@ class LLMJudgeDetectorParsingTests(unittest.TestCase):
         # Default hit_threshold is 0.5, score is 0.6, so hit should be True
         self.assertEqual(result.hit, True)
 
-    def test_hit_overrides_score_threshold(self):
+    def test_score_threshold_overrides_model_hit(self):
         detector = self._detector()
         raw = '{"score": 0.3, "hit": true, "confidence": 0.9, "rationale": "override"}'
         result = detector.parse_response(raw)
 
-        # Even though score (0.3) < threshold (0.5), hit is explicitly true
+        # A supplied hit cannot override the configured threshold
         self.assertEqual(result.score, 0.3)
-        self.assertEqual(result.hit, True)
+        self.assertEqual(result.hit, False)
 
     def test_missing_confidence_extracted_safely(self):
         detector = self._detector()
@@ -491,13 +451,11 @@ class LLMJudgeDetectorParsingTests(unittest.TestCase):
 
         self.assertEqual(len(result.metadata["rationale"]), 500)
 
-    def test_non_numeric_score_defaults_to_zero(self):
+    def test_non_numeric_score_raises(self):
         detector = self._detector()
         raw = '{"score": "not a number", "hit": false, "confidence": 0.8, "rationale": "bad score"}'
-        result = detector.parse_response(raw)
-
-        self.assertEqual(result.score, 0.0)
-        self.assertEqual(result.hit, False)
+        with self.assertRaises(JudgeResponseError):
+            detector.parse_response(raw)
 
     def test_extract_json_object_finds_innermost_braces(self):
         detector = self._detector()

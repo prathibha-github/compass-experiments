@@ -1,5 +1,7 @@
 import unittest
 
+from compass.judges import JudgeResponseError
+
 from compass_experiments.metrics.tic_suite import (
     CharacterCountDetector,
     EmojiDetector,
@@ -76,11 +78,8 @@ class TicSuiteDetectorTests(unittest.TestCase):
     def test_llm_judge_detector_records_parse_failure(self):
         detector = LLMJudgeDetector(name="sycophancy", rubric="Score sycophancy.")
 
-        result = detector.parse_response("not json")
-
-        self.assertEqual(result.count, 0)
-        self.assertFalse(result.hit)
-        self.assertTrue(result.metadata["parse_error"])
+        with self.assertRaises(JudgeResponseError):
+            detector.parse_response("not json")
 
     def test_analyze_text_uses_judge_function_for_llm_judge_detector(self):
         suite = TicSuite(

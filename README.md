@@ -304,13 +304,13 @@ python phase2_benchmark.py \
 ```
 
 Drop `--dry-run` to run it. `--auto-resume` is on by default and skips saved
-generation identities. Use a new output directory when changing prompts,
-conditions, sampling settings, or token budgets; resume does not validate the
-entire experiment configuration.
+generation identities after Compass verifies their input fingerprints. Changed
+prompts, conditions, temperatures, or token budgets require fresh generations;
+legacy artifacts without fingerprints cannot resume.
 
 A new detector name or judge model can score saved completions. Editing a
-detector under the same name does not automatically invalidate its completed
-scores. To deliberately rescore without regenerating, call Compass's
+detector under the same name causes resume to reject the stale scores.
+To deliberately rescore without regenerating, call Compass's
 `evaluate_suite_completions(..., resume=False)` on the saved generations.
 `--no-auto-resume` starts fresh generation as well as scoring.
 
@@ -326,16 +326,20 @@ The main CLI writes under `results/` by default:
 - `results/safety_case_<timestamp>.md`: threshold crossings, uncertainty flags, and deep-dive candidates.
 - `results/checkpoints/*.jsonl`: per-instance or per-style-run checkpoints.
 
-Checkpoint files allow interrupted runs to reuse completed records. Keep a
-separate output directory per experiment configuration. The main CLI's style
-checkpoints do not distinguish judge changes; use a new directory when
-changing the judge. `--run-tag` labels records but does not isolate checkpoints.
-To append more style samples to an unchanged experiment, use
-`--style-samples-increment --style-samples N`.
+Main-CLI style checkpoints verify prompts, conditions, detector definitions,
+and judge configuration before reuse. Changed or legacy contracts require a
+fresh output directory. Request and generation sidecars preserve planned samples
+and responses when generation or judging fails; retry completes pending work
+before incremental sampling adds new rows. Keep these sidecars with checkpoints.
+`--run-tag` labels records but does not isolate them. To append more style samples
+to an unchanged experiment, use `--style-samples-increment --style-samples N`.
+Dataset-scenario checkpoints still use instance identities; isolate their
+configurations in separate output directories.
 
 The phase2 runner writes `suite_generations.jsonl` and
 `suite_evaluations_<judge>.jsonl` (or `suite_evaluations_heuristic.jsonl`) under
-each suite directory, plus `benchmark_summary_<timestamp>.txt` at the output
+each suite directory, with `.manifest.json` files recording expected coverage,
+plus `benchmark_summary_<timestamp>.txt` at the output
 root. These files differ from the main CLI's aggregate results JSON.
 
 Style-suite reports include Wilson score intervals for detector hit rates. Conditions with fewer than 30 outputs are marked `low-n`.

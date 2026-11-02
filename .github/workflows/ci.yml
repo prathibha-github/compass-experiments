@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  COMPASS_REVISION: 8bc4bd4b90a66f8a04d7d31dbeba91d9e54cab70
+
 jobs:
   cli-smoke:
     runs-on: ubuntu-latest
@@ -25,7 +28,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install "compass-eval[openai,anthropic,google] @ git+https://x-access-token:${{ secrets.COMPASS_PAT }}@github.com/prathibha-github/compass.git@main"
+          pip install "compass-eval[openai,anthropic,google] @ git+https://x-access-token:${{ secrets.COMPASS_PAT }}@github.com/prathibha-github/compass.git@${COMPASS_REVISION}"
           pip install -r requirements-base.txt pytest
 
       - name: Run CLI smoke tests
@@ -50,7 +53,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install "compass-eval[openai,anthropic,google] @ git+https://x-access-token:${{ secrets.COMPASS_PAT }}@github.com/prathibha-github/compass.git@main"
+          pip install "compass-eval[openai,anthropic,google] @ git+https://x-access-token:${{ secrets.COMPASS_PAT }}@github.com/prathibha-github/compass.git@${COMPASS_REVISION}"
           pip install -r requirements-base.txt pytest
 
       - name: Run tests

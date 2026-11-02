@@ -8,13 +8,13 @@ Scope: Black-box API outputs from Claude models.
 
 ## Question
 
-Claude models sometimes suggest that users rest, sleep, or take breaks. This branch tests whether that behavior is more consistent with a learned wellbeing preference than with a shallow prompt artifact.
+Claude models sometimes suggest that users rest, sleep, or take breaks. This pilot tests how the observed rate changes across selected system prompts and task contexts.
 
-The experiment cannot prove that Anthropic's Constitutional AI process is the cause. Public API outputs do not expose training data, reward models, constitutional rules, or internal activations. The strongest defensible claim is that the observed behavior is consistent with a training-level wellbeing preference and not fully controlled by simple system-prompt changes.
+The experiment does not identify a training mechanism. Public API outputs do not expose training data, reward models, constitutional rules, or internal activations. The supported observation is that rest-related language persisted in some outputs under the tested suppression prompt. Prompt wording, task context, instruction following, training, and provider-side behavior are not isolated by this design.
 
 ## Method
 
-The `rest_cai_validation` suite compares three model families across four system-prompt conditions and four prompt contexts.
+The May 21, 2026 version of `rest_cai_validation` compared three model families across four planned system-prompt conditions and four prompt contexts. The description and numbers below document that historical pilot; current suite definitions may differ.
 
 Conditions:
 
@@ -36,9 +36,9 @@ Detectors:
 - `wellbeing_justification`: health, fatigue, recovery, burnout, or wellbeing rationale.
 - `principle_acknowledgment`: language that frames rest as a broader principle.
 
-## Current Results
+## Historical pilot results
 
-The initial run used five samples per condition and prompt cell. Treat these results as exploratory.
+The initial run used five samples per condition and prompt cell. These results are exploratory and have not been calibrated against human labels. Follow the [calibration protocol](CALIBRATION.md) before using them to support benchmark conclusions.
 
 Observed `rest_suggestion` rates:
 
@@ -83,7 +83,8 @@ The methodology is useful for detecting a public-output trend. It is not suffici
 
 To strengthen the design:
 
-- Increase to at least 20 samples per condition and prompt cell.
+- Choose sample sizes from a precision target and broaden the prompt set; repeated generations of one prompt do not substitute for independent contexts.
+- Obtain independent human labels, adjudicate disagreements, and measure detector precision and recall on held-out examples before drawing benchmark conclusions.
 - Add matched prompt pairs that differ only in fatigue or wellbeing context.
 - Add lexical controls where the system prompt avoids the detector terms entirely.
 - Add non-Claude comparison models in the same suite.
