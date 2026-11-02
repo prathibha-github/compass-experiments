@@ -1,90 +1,117 @@
-# Research limitations and next experiments
+# Comparing model behavior
 
-Compass Experiments studies observable model behavior under selected prompts,
-conditions, and scoring rules. The current rest-suggestion results are pilot
-observations. They do not identify a training mechanism, establish a general
-model ranking, or demonstrate that a model is safe or unsafe.
+I want to be able to take something unexpected a model does, turn it into a
+test suite, and compare it across versions, prompts, and conditions. The
+harness and Compass provide the infrastructure for doing that repeatedly.
+A behavior could involve style, rest suggestions, or safety guidance; the
+question and scoring rules belong to the individual experiment.
 
-This assessment is current as of November 2, 2026. The May 21 findings describe
-historical runs; later code fixes do not retrospectively validate them. Proposed
-experiments below have not been run. Human-label calibration remains pending.
+The rest-suggestion study is one example. These notes cover what I still need
+to check in that experiment and what that means for interpreting the results.
 
-## What limits the current evidence
+## Why the model keeps suggesting rest
 
-| Dimension | Limitation and effect on interpretation | Next experiment or correction |
-| --- | --- | --- |
-| Measurement target | Rest-related language, a recommendation to rest, and unsolicited wellbeing advice are different targets. A keyword hit does not distinguish them. | Define each label before annotation. Include quotation, negation, requested advice, and task-specific uses of words such as “recovery” as controls. See [CALIBRATION.md](CALIBRATION.md). |
-| Causal attribution | Persistence under a tested suppression prompt is a behavioral observation. Public API comparisons do not isolate training data, Constitutional AI, architecture, or provider-side instructions. | Test specified prompt interventions on matched tasks and report their effects. Training-mechanism claims would require additional access and an identification strategy; expanding the sample alone would not establish them. |
-| Prompt confounds | Some historical prompts mention fatigue or wellbeing, and the suppression instruction itself uses related vocabulary. Responses may therefore contain solicited or primed language. | Compare matched fatigue/neutral prompts and suppression instructions with and without detector vocabulary. Include a neutral condition for every model. |
-| Samples and uncertainty | The pilot planned five generations per prompt/condition cell and has missing controls for some models. Shared prompts, low-temperature repeats, and exploratory comparisons limit inference from response-level rates. | Choose a precision target and analysis plan before collecting follow-up data. Broaden the prompt set, report actual denominators, and use prompt-level uncertainty estimates. Report inconclusive comparisons as such. |
-| Judge validity | Strict parsing and consistent thresholds prevent particular software errors. They do not establish that the heuristic or LLM judge agrees with independent human assessment. | Label held-out examples independently, adjudicate disagreements, and report detector errors by model, task, and condition. Compare multiple judges on the same saved responses without treating their agreement as ground truth. |
-| Execution context | Main-CLI LLM judges see completion text; phase2 also supplies the user request. That difference can change judgments of unsolicited advice. Neither path automatically supplies every piece of generation context. | Use phase2 for request-dependent rubrics and state what the judge sees. Audit the effect of context on fixed responses before comparing results across execution paths. |
-| Reproducibility and coverage | Current style runs preserve planned samples and generations; phase2 uses Compass fingerprints and manifests. Historical artifacts lack some of that evidence, and scenario checkpoints still use instance identities. Provider aliases can change. | Preserve archived definitions, code SHAs, model IDs, settings, manifests, and failures. Re-score historical data explicitly when possible; use fresh output directories for changed scenario configurations. Do not reconstruct old prompts from current definitions. |
-| Generalization | A narrow set of style and wellbeing tasks does not measure broad instruction following, harmful capabilities, long-horizon agent behavior, or deployment risk. Selected public benchmark slices also have limited scope. | Hold out task families and test alternate wording, models, and versions. Introduce a safety-relevant challenge set only with a defined threat model and a validated scoring target. |
+I started this work because models kept suggesting rest when I was asking for
+help with a task. I wanted to understand what was causing that behavior. Was
+it responding to something in my prompt? Treating a mention of fatigue as a
+request for advice? Or would it make the suggestion even when the task and
+instructions gave it little reason to?
 
-“Calibration” has two uses in this repository. Scenario ECE measures answer
-confidence against correctness on examples with usable logprob coverage.
-Human-label calibration checks whether a behavioral detector measures its
-intended target. Evidence for one does not establish the other.
+The results are preliminary. I haven't checked the detector scores against
+independent human labels yet.
 
-The library's remaining implementation boundaries, including BenchmarkSpec
-resume and seed metadata, are described in
+## I need to check what the detectors are counting
+
+Mentioning rest, recommending it, and giving advice the user didn't request
+are different things. The current keyword detector can't reliably distinguish
+them. “Recovery” could refer to a database, and a response can discuss a rest
+suggestion without making one.
+
+I plan to have two people independently label whether a response recommends
+rest and whether the user asked for that advice. An example such as “I'm
+exhausted; help me fix this bug” needs an agreed interpretation, or an uncertain
+label. Advice can be appropriate even when it wasn't explicitly requested.
+
+The `rest_suggestion` detector can then be checked against the recommendation
+labels. `unsolicited_rest_judge` needs the combined judgment: a recommendation
+was made and the user didn't request it. Comparing both against the same label
+would mix up two different questions. The current labeling helper handles one
+binary target at a time, so these need separate annotation records.
+
+The [calibration protocol](CALIBRATION.md) covers the labeling process. Here,
+calibration means checking detector scores against human judgments. The ECE
+metric elsewhere in the harness measures answer-confidence calibration and
+wouldn't answer this question.
+
+## The prompts may be inviting the behavior
+
+Some of the original prompts mention fatigue or health. Even the instruction
+to ignore wellbeing uses wellbeing-related words. That makes it hard to tell
+whether the model is volunteering the topic or responding to cues I supplied.
+
+The next run should compare matched tasks with and without fatigue cues. I
+also want to compare task-only instructions that avoid the detector vocabulary
+with the original suppression wording, and include prompts that explicitly
+ask for rest advice. Those comparisons can help separate sensitivity to the
+wording from persistence across the tested instructions.
+
+Asking the model why it suggested rest may produce a plausible explanation,
+but that explanation alone doesn't show what caused the response. Likewise,
+seeing the behavior survive one suppression prompt doesn't establish that
+Constitutional AI or a particular training stage caused it. API experiments
+can test the effect of visible inputs. Attributing the behavior to training
+would need additional evidence.
+
+## The pilot is too small for a broad comparison
+
+The May 21 pilot planned five responses per prompt and condition. Some models
+are missing neutral controls, and the prompts differ from today's suite.
+The [historical findings](CAI_FINDINGS.md) need to be read with those limits;
+recent code fixes haven't re-scored those results.
+
+For the follow-up, I need more distinct tasks, a neutral condition for every
+model, and a sample size chosen around how precisely I want to estimate the
+rates. Repeated responses to the same prompt shouldn't be treated as independent
+tasks. I'll keep model and condition results separate and account for shared
+prompts when estimating uncertainty.
+
+Some task families should be held out while I refine the rubric. If a pattern
+only appears on the prompts used to develop the detector, I need to know that
+before describing it as a broader model tendency.
+
+## The scoring path can change the result
+
+Main-CLI LLM judges see the completion. Phase2 also gives them the original user
+request, which is needed to assess whether advice was requested. I'll use
+phase2 for that part of the study and document exactly what context was shown.
+It doesn't automatically include every part of the generation context.
+
+I can compare scoring methods on the same saved responses. That keeps changes
+in the model's answer out of the comparison. A completion-only judge is a useful
+baseline, but its lack of context is an expected disadvantage, not a finding
+about the model that generated the response.
+
+Current style runs preserve planned samples and generated responses through
+failures. Phase2 checks fingerprints and manifests before reusing work. Older
+artifacts are missing some of that information, and scenario checkpoints still
+use instance identities. I'll keep the archived prompts, settings, and code
+revisions with each run rather than reconstruct old runs from current suite
+definitions. Remaining library issues are in
 [Compass's limitations](https://github.com/prathibha-github/compass/blob/main/docs/LIMITATIONS.md).
-The current scoring fixes and tests are evidence about software behavior;
-validation of experimental conclusions requires separate empirical evidence.
 
-## Where this work can support safety research
+## What I want to learn from the next run
 
-| Area | Current connection | Further work needed |
-| --- | --- | --- |
-| Behavioral alignment and safeguards evaluation | Rubrics, prompt conditions, and reusable scoring support bounded studies of model responses. Style indicators are not themselves safety outcomes. | Define a safety-relevant construct and validate it with controls, human labels, and held-out tasks. |
-| Evaluator reliability and scalable oversight | Saved responses and replaceable judges permit controlled studies of evaluator disagreement. | Measure failure modes under task difficulty, evaluator changes, and limited human feedback. The current work does not demonstrate oversight beyond human capability. |
-| Robustness and adversarial testing | Scenario typo perturbations and style conditions exercise specific input changes. | Add explicit threat models, meaning-preserving perturbations, and attempts to manipulate the evaluator. Typo robustness does not establish adversarial robustness. |
-| Research infrastructure | The library/harness separation, checkpoints, and regression tests support repeatable experiment execution. | Extend verified resume and provenance to remaining paths, then evaluate execution reliability and cost at larger workloads. This is distinct from building or evaluating a training system. |
+The human labels should first tell me whether the rest-suggestion pattern is
+being measured accurately. With that checked, the prompt comparisons can show
+which inputs change the behavior and which tested instructions leave it in
+place. I'll choose the comparisons before looking at the new results and keep
+examples where the detectors and people disagree.
 
-Model internals and mechanistic interpretability, model-organism training,
-frontier capability evaluations, AI welfare, and reinforcement learning are
-outside the demonstrated scope. In particular, a model mentioning a user's
-wellbeing provides no evidence about the model's own welfare or experience.
-These areas should appear as possible new projects only with a concrete method
-and the required access, rather than as existing capabilities of this harness.
+The pattern may shrink after correcting detector errors, depend on a small
+set of fatigue-related prompts, or persist across a wider set of tasks. Each
+outcome would help narrow the explanation. None would, on its own, identify a
+training mechanism.
 
-## A bounded next study
-
-Use the rest-suggestion pilot to ask: how much of the apparent persistence under
-task-only instructions remains after distinguishing requested advice from
-unsolicited recommendations? A related measurement question is whether the
-judge needs the original request to make that distinction accurately.
-
-1. Freeze matched task prompts, conditions, model IDs, and definitions. Set a
-   precision target and reserve prompt families for held-out assessment before
-   running the study. Include requested-advice and neutral controls.
-2. Save each generated response once. Have two people label whether it contains
-   a rest recommendation and whether that recommendation was requested. Preserve
-   disagreements and adjudication notes. The current helper exports one binary
-   target per labeling task; these two targets need separate annotation records.
-   Define what counts as a request, including how to handle an implicit request
-   or a mention of fatigue. Keep uncertain cases unresolved until adjudication.
-   Requestedness does not by itself determine whether advice was appropriate.
-3. Compare heuristic and LLM judgments on the same responses, including a
-   controlled change in the context shown to the judge. Report human-label
-   agreement, precision, recall, coverage, prompt-level uncertainty, and results
-   by model and condition. Publish examples where the methods disagree.
-
-Match each comparison to its label definition. The `rest_suggestion` keyword
-detector targets rest-related language; it is not a validated detector of
-unsolicited advice. A derived unsolicited-recommendation label requires both a
-recommendation and a judgment about requestedness, with unresolved cases kept
-separate. Treat a completion-only judge as an intentionally context-limited
-baseline, and report this design choice rather than presenting its expected
-information disadvantage as a new research discovery.
-
-A useful result could be that a detector is accurate only for a restricted task
-family, that a reported model difference disappears after adjudication, or that
-the sample cannot distinguish the hypotheses. The study is complete when its
-protocol, artifacts, exclusions, and results are inspectable. Any claim of
-training causality would remain outside its design.
-
-Historical reports: [full findings](CAI_FINDINGS.md) and
-[short write-up](CAI_FINDINGS_SHORT.md). Annotation and offline comparison:
-[CALIBRATION.md](CALIBRATION.md).
+The rest-suggestion study is about understanding that behavior. The same
+infrastructure can support a separate study of safety guidance, with a suite
+that defines what is being measured and which comparisons matter.

@@ -4,8 +4,9 @@ The May 21 pilot has no human-label calibration results. Its keyword hit rates
 remain exploratory. Fixing parsing and resume behavior does not establish that
 a detector measures the intended behavior accurately.
 
-The broader [limitations and study plan](RESEARCH_LIMITATIONS.md) cover prompt
-confounds, uncertainty, causal claims, and transfer beyond these tasks.
+The [experiment notes](RESEARCH_LIMITATIONS.md) explain how the human labels
+will help check the rest-suggestion findings before testing explanations for
+the behavior.
 
 For the next study, define the target before looking at model comparisons:
 does the response recommend that the user rest, sleep, pause, or take a break?
