@@ -15,6 +15,7 @@ The harness supports:
 - Lexical/style tic detection across prompt conditions.
 - LinkedIn-style emoji and phrase prevalence.
 - Built-in tic suites for lexical, punctuation, formatting, and tone indicators.
+- Constitutional-compliance suites with saved generations and separate scoring.
 - Persona-transfer analysis: whether persona/style system prompts increase tic prevalence on the same neutral tasks.
 - Thin adapters over Compass clients for OpenAI, Anthropic, Gemini, and Ollama.
 
@@ -22,14 +23,18 @@ These detectors are trend-analysis tools, not definitive classifiers. Tone and f
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the repo layout and execution flow.
 
+Use `python -m compass_experiments.main` for scenario benchmarks and style
+analysis with cloud models. Use `python phase2_benchmark.py` for separate
+generation/scoring, prompt-aware judges, and supported Ollama models.
+
 ## Setup
 
 ### Fresh machine
 
-There is nothing to compile; compass is pure Python and installs via pip. It is
-consumed as an editable sibling checkout, so clone both repos into the same
-parent directory and keep compass on `main` (the two-phase suite runner used by
-`phase2_benchmark.py` lives there).
+Clone both repos into the same parent directory. The harness installs Compass
+as an editable sibling checkout; its suite runner lives in that library.
+Use a Python environment compatible with both repositories (harness CI uses
+Python 3.13).
 
 ```bash
 mkdir -p ~/dev_setup && cd ~/dev_setup
@@ -48,6 +53,7 @@ editable (`pip install -e ../compass --no-deps`). Confirm the wiring:
 
 ```bash
 .venv/bin/python -c "from compass import generate_suite_completions; print('compass two-phase OK')"
+source .venv/bin/activate
 ```
 
 ### Existing checkout
@@ -56,7 +62,7 @@ Run these commands from the root of your existing checkout. Keep its current
 directory name and virtual environment; create `.venv` only if it is missing.
 
 ```bash
-test -d .venv || python -m venv .venv
+test -d .venv || python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
@@ -69,28 +75,30 @@ The project is named Compass Experiments; its Python package is
 new package name. Neither a package rename nor a GitHub repository rename
 changes your local checkout's directory name.
 
-If you only want the public dependencies without the private `compass` install
-step, use:
+To install only third-party dependencies, use the following command. Running
+the harness still requires Compass to be installed separately.
 
 ```bash
 pip install -r requirements-base.txt
 ```
 
-Set API keys through the environment:
+Set keys for the providers used by both your subject models and judges:
 
 ```bash
 export OPENAI_API_KEY="..."
 export ANTHROPIC_API_KEY="..."
+export GOOGLE_API_KEY="..."
 ```
 
 Do not commit API keys or paste them into result files.
 
 ## Quick Checks
 
-Estimate cost without calling APIs:
+Estimate cost without calling APIs. The main CLI validates the OpenAI key even
+in dry-run mode, so this example supplies a placeholder:
 
 ```bash
-python -m compass_experiments.main --dry-run
+python -m compass_experiments.main --api-key dry-run-placeholder --dry-run
 ```
 
 Run the unit tests:
@@ -101,7 +109,9 @@ PYTHONPYCACHEPREFIX=/tmp/compass_experiments_pycache python -m unittest discover
 
 ## Style/Tic Evals
 
-Run all built-in non-LinkedIn style suites cheaply:
+Run the four default heuristic style suites (`lexical`, `punctuation`,
+`formatting`, and `tone`). The `all` alias selects these four only; it excludes
+LinkedIn and LLM-judge suites.
 
 ```bash
 python -m compass_experiments.main \
@@ -159,21 +169,25 @@ Recompute pairwise offline from an existing results JSON (no API calls):
 
 ```bash
 python -m compass_experiments.main \
-  --pairwise-from-results results/results_20260522_072249.json \
+  --pairwise-from-results results/results_YYYYMMDD_HHMMSS.json \
   --pairwise-method bradley_terry \
   --pairwise-segment-by condition \
   --pairwise-time-decay-halflife-days 90
 ```
 
-Score pairwise comparison with a single detector:
+Replace `results_YYYYMMDD_HHMMSS.json` with an actual output file before running.
+Keep its referenced checkpoint JSONL files available; offline ranking reads
+those per-output records, not just the aggregate JSON.
+
+Score pairwise comparison with a single heuristic detector:
 
 ```bash
 python -m compass_experiments.main \
   --style-only \
-  --style-suite rest_cai_validation \
+  --style-suite rest_hypothesis \
   --style-samples 5 \
   --pairwise-detector rest_suggestion \
-  --models claude-haiku-4-5-20251001 claude-sonnet-4-6 claude-opus-4-6
+  --models claude-haiku-4-5-20251001 claude-sonnet-4-6
 ```
 
 Run an LLM-judge suite for subjective tone categories:
@@ -212,12 +226,17 @@ python -m compass_experiments.main \
   --models gpt-4o-mini gpt-4.1-nano
 ```
 
-LLM-judge suites are opt-in. They add judge-model cost and should be audited for judge bias.
+LLM-judge suites are opt-in and require `--judge-model`. They add judge-model
+cost and should be audited for judge bias. The main CLI judges completion text
+without the original user request; use `phase2_benchmark.py` for prompt-aware
+suites such as `rest_cai_validation`, `rest_offtask`, or `agentic_side_effects`.
 LLM-judge parsing clamps detector score into `[0, 1]` and truncates stored `rationale`/raw judge text to 500 chars.
 When secondary judge auditing is enabled, each LLM-judge detector checkpoint record adds:
+
 - `secondary_score`, `secondary_hit`, `secondary_confidence`, `secondary_rationale`
 - `score_delta` (absolute primary-secondary score gap)
 - `agreement` (primary and secondary hit match)
+
 ## Persona Transfer
 
 Persona transfer compares each style/persona condition against a suite baseline. It measures whether a persona system prompt increases tic prevalence on neutral task prompts. It does not measure persistent cross-session model memory; public API calls are stateless unless the caller supplies prior messages.
@@ -231,7 +250,8 @@ python -m compass_experiments.main \
   --models gpt-4o-mini gpt-4.1-nano gpt-5-nano
 ```
 
-If `--persona-transfer` is passed without `--style-suite`, the harness enables all non-LinkedIn built-in style suites by default.
+If `--persona-transfer` is passed without `--style-suite` or a LinkedIn flag,
+the harness selects the same four default heuristic style suites as `all`.
 
 ## Benchmark Evals
 
@@ -255,36 +275,68 @@ python -m compass_experiments.main \
 
 ### Constitutional-compliance suites (phase2)
 
-The constitutional-compliance suites run through `phase2_benchmark.py`, which uses compass's two-phase suite runner: completions are generated once per `(model, prompt, condition, sample)` and persisted under `results/<suite>/`, then scored separately. Adding or re-running a detector (including an LLM judge) re-scores the saved completions without regenerating.
+The constitutional-compliance suites run through `phase2_benchmark.py`, which
+uses Compass's two-phase suite runner. Completions are saved per
+`(model, suite, prompt, condition, sample)` under `<output-dir>/<suite>/`, then
+scored separately. The default output root is `results/benchmark`.
 
-For sampling-based suites like `rest_cai_validation`, set `--temperature` above 0.0 so the per-condition samples are independent draws. `rest_cai_validation` includes a prompt-aware LLM-judge detector (`unsolicited_rest_judge`), so a `--judge-model` is required; use one fixed judge across all models so the comparison is not biased by self-judging.
+For repeated sampling, set `--temperature` above 0.0 for models that support
+it. This allows output variation; it does not establish statistical
+independence. `rest_cai_validation` includes a prompt-aware LLM-judge detector
+(`unsolicited_rest_judge`). The CLI defaults to `gpt-4o-mini` as judge; set
+`--judge-model` explicitly to record your choice. Keep the judge fixed across
+subject models and audit its errors and provider preferences.
 
 Preview the plan and API-call exposure first with `--dry-run` (no calls made):
 
 ```bash
 python phase2_benchmark.py \
   --suites rest_cai_validation \
-  --models claude-opus-4-6 claude-sonnet-4-6 claude-haiku-4-5-20251001 \
+  --models claude-sonnet-4-6 claude-haiku-4-5-20251001 \
   --judge-model claude-haiku-4-5-20251001 \
   --temperature 1.0 \
   --samples 20 \
+  --max-tokens 1000 \
+  --disallow-mixed-token-budgets \
   --output-dir results/benchmark_pilot \
   --auto-resume \
   --dry-run
 ```
 
-Drop `--dry-run` to run it. `--auto-resume` continues from existing completions in `--output-dir`, so re-running the same command never re-pays for generations already done. The summary breaks results down by model, condition, and detector with Wilson intervals. See `PHASE2_BENCHMARK.md` for the full set of suites and options.
+Drop `--dry-run` to run it. `--auto-resume` is on by default and skips saved
+generation identities. Use a new output directory when changing prompts,
+conditions, sampling settings, or token budgets; resume does not validate the
+entire experiment configuration.
+
+A new detector name or judge model can score saved completions. Editing a
+detector under the same name does not automatically invalidate its completed
+scores. To deliberately rescore without regenerating, call Compass's
+`evaluate_suite_completions(..., resume=False)` on the saved generations.
+`--no-auto-resume` starts fresh generation as well as scoring.
+
+The summary breaks results down by model, condition, and detector with Wilson
+intervals. See [PHASE2_BENCHMARK.md](PHASE2_BENCHMARK.md) for suites and options.
 
 ## Outputs
 
-Results are written under `results/` by default:
+The main CLI writes under `results/` by default:
 
 - `results/results_<timestamp>.json`: aggregate machine-readable summary.
 - `results/summary_<timestamp>.txt`: human-readable report.
 - `results/safety_case_<timestamp>.md`: threshold crossings, uncertainty flags, and deep-dive candidates.
 - `results/checkpoints/*.jsonl`: per-instance or per-style-run checkpoints.
 
-Checkpoint files allow interrupted runs to resume without repeating completed API calls.
+Checkpoint files allow interrupted runs to reuse completed records. Keep a
+separate output directory per experiment configuration. The main CLI's style
+checkpoints do not distinguish judge changes; use a new directory when
+changing the judge. `--run-tag` labels records but does not isolate checkpoints.
+To append more style samples to an unchanged experiment, use
+`--style-samples-increment --style-samples N`.
+
+The phase2 runner writes `suite_generations.jsonl` and
+`suite_evaluations_<judge>.jsonl` (or `suite_evaluations_heuristic.jsonl`) under
+each suite directory, plus `benchmark_summary_<timestamp>.txt` at the output
+root. These files differ from the main CLI's aggregate results JSON.
 
 Style-suite reports include Wilson score intervals for detector hit rates. Conditions with fewer than 30 outputs are marked `low-n`.
 Style-suite JSON and text reports also include task segments, grouped by prompt `task_type`.
@@ -295,9 +347,16 @@ Pairwise ranking supports `--pairwise-method count|bradley_terry`, segmentation 
 
 - Use `--dry-run` before larger multi-model runs.
 - Keep `--style-samples` fixed when comparing models.
+- Keep generation token budgets comparable and inspect truncated outputs.
 - Record the exact model names and run timestamp; public model aliases can change.
 - Prefer comparing deltas across conditions/models over interpreting raw detector hits.
 - Increase `--request-interval` if you hit rate limits.
+
+Model IDs and price estimates come from local configuration, not a live
+provider catalog. Verify availability before a paid run and record both repo
+commit SHAs alongside your results. Repeated samples at a fixed temperature
+and a small shared prompt set can be correlated; Wilson intervals alone do
+not account for that dependence.
 
 ## Extending The Harness
 
