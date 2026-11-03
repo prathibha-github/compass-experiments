@@ -55,13 +55,20 @@ def extract_choice_probs(
 
 def compute_ece(confidences: List[float], correct_flags: List[bool], n_bins: int = 10) -> float:
     """Expected Calibration Error."""
+    if len(confidences) != len(correct_flags):
+        raise ValueError("Each confidence must have a corresponding correctness label")
+    if type(n_bins) is not int or n_bins <= 0:
+        raise ValueError("n_bins must be a positive integer")
+    if any(not np.isfinite(p) or not 0.0 <= p <= 1.0 for p in confidences):
+        raise ValueError("Confidences must be finite values between 0 and 1")
     if not confidences:
         return 0.0
     bins = np.linspace(0.0, 1.0, n_bins + 1)
     n    = len(confidences)
     ece  = 0.0
-    for lo, hi in zip(bins[:-1], bins[1:]):
-        mask        = [lo <= p <= hi for p in confidences]
+    for i, (lo, hi) in enumerate(zip(bins[:-1], bins[1:])):
+        # Include 1.0 in the last bin; shared boundaries belong to the next bin.
+        mask        = [lo <= p and (p < hi or i == n_bins - 1) for p in confidences]
         bucket_conf = [p for p, m in zip(confidences,   mask) if m]
         bucket_corr = [c for c, m in zip(correct_flags, mask) if m]
         if not bucket_conf:
