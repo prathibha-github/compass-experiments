@@ -470,12 +470,17 @@ class EvalRunner:
         saved_generations = {}
         requested_samples = set()
         for artifact in (ckpt_path, generations_path, requests_path):
+            seen_identities = set()
             if os.path.exists(artifact):
                 with open(artifact) as handle:
                     for line in handle:
                         if not line.strip():
                             continue
                         row = json.loads(line)
+                        identity = (row["condition"], row["prompt_idx"], row["sample_idx"])
+                        if identity in seen_identities:
+                            raise ValueError(f"Duplicate style checkpoint identity {identity} in {artifact}")
+                        seen_identities.add(identity)
                         if row.get("run_contract") != run_contract:
                             raise ValueError(
                                 "Style checkpoint inputs changed or lack a verified run contract. "

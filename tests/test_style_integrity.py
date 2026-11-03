@@ -105,3 +105,19 @@ class StyleIntegrityTests(unittest.TestCase):
                         runner._run_tic_suite(subject, 'model', self.suite(), samples=1)
             self.assertEqual(subject.calls, 1)
             self.assertEqual(judge.calls, 1)
+
+    def test_duplicate_artifacts_are_rejected_without_calls_or_writes(self):
+        for suffix in ['', '.generations.jsonl', '.requests.jsonl']:
+            with self.subTest(suffix=suffix), tempfile.TemporaryDirectory() as directory:
+                subject, judge = Client(), Client(judge=True)
+                runner = EvalRunner(EvalConfig(api_key='dummy', output_dir=directory, judge_model='judge'))
+                with patch('compass_experiments.runner.create_client', return_value=judge):
+                    result = runner._run_tic_suite(subject, 'model', self.suite(), samples=1)
+                    path = Path(result['checkpoint_path'] + suffix)
+                    path.write_text(path.read_text()*2)
+                    before = {p.name: p.read_bytes() for p in path.parent.iterdir()}
+                    with self.assertRaisesRegex(ValueError, 'Duplicate'):
+                        runner._run_tic_suite(subject, 'model', self.suite(), samples=1)
+                self.assertEqual(subject.calls, 1)
+                self.assertEqual(judge.calls, 1)
+                self.assertEqual({p.name: p.read_bytes() for p in path.parent.iterdir()}, before)

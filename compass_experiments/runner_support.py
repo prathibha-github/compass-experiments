@@ -317,6 +317,8 @@ def load_tic_checkpoint(
                 )
                 continue
 
+            if key in done:
+                raise ValueError(f"Duplicate style checkpoint identity {key} at {path}:{line_no}")
             done[key] = rec
             condition_outputs[condition].append(completion)
 
