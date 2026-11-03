@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  COMPASS_REVISION: f361d2f79e6695730153639449c4142fe30ad30a
+  COMPASS_REVISION: 7439ebff47338058fea46ca1546c597c03e74a16
 
 jobs:
   cli-smoke:
