@@ -48,9 +48,10 @@ factory also recognizes supported Ollama models.
 
 For an LLM detector, `_run_tic_suite` supplies a `judge_fn` that calls the judge
 client. `LLMJudgeDetector.detect_with_judge` builds and parses the request.
-This path does not use Compass's cached `LLMJudge`, and it scores completion
-text without the original user request. Optional secondary judging follows
-that same direct-detector path.
+This path does not use Compass's cached `LLMJudge`. It passes the saved user
+request alongside the completion, and the detector records that context in its
+metadata. Optional secondary judging receives the same saved request.
+Generation system instructions are omitted from judging by default.
 
 Main-CLI checkpoints live under `<output-dir>/checkpoints/`; aggregate reports
 live at the output root. The offline `--pairwise-from-results` route reads the

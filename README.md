@@ -235,9 +235,9 @@ python -m compass_experiments.main \
 ```
 
 LLM-judge suites are opt-in and require `--judge-model`. They add judge-model
-cost and should be audited for judge bias. The main CLI judges completion text
-without the original user request; use `phase2_benchmark.py` for prompt-aware
-suites such as `rest_cai_validation`, `rest_offtask`, or `agentic_side_effects`.
+cost and should be checked against human labels. Both CLIs give judges the saved
+user request alongside the completion. Phase2 keeps generation and scoring
+separate, so it is useful when comparing judges on the same saved responses.
 LLM-judge parsing clamps detector score into `[0, 1]` and truncates stored `rationale`/raw judge text to 500 chars.
 When secondary judge auditing is enabled, each LLM-judge detector checkpoint record adds:
 
