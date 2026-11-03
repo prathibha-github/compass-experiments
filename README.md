@@ -222,7 +222,7 @@ python -m compass_experiments.main \
   --models claude-sonnet-4-6
 ```
 
-Emit a safety-case report with deep-dive candidates:
+Emit a behavioral evaluation report with deep-dive candidates:
 
 ```bash
 python -m compass_experiments.main \
@@ -327,6 +327,12 @@ intervals. See [PHASE2_BENCHMARK.md](PHASE2_BENCHMARK.md) for suites and options
 
 ## Outputs
 
+The scenario scores describe the variants configured here. MMLU uses four
+subjects with balanced sampling and subject-matched demonstrations. BoolQ
+truncates passages to 800 characters, which can remove supporting evidence;
+TruthfulQA samples up to three distractors. Do not compare these scores directly
+with published full-benchmark results.
+
 The main CLI writes under `results/` by default:
 
 - `results/results_<timestamp>.json`: aggregate machine-readable summary.
@@ -341,8 +347,11 @@ and responses when generation or judging fails; retry completes pending work
 before incremental sampling adds new rows. Keep these sidecars with checkpoints.
 `--run-tag` labels records but does not isolate them. To append more style samples
 to an unchanged experiment, use `--style-samples-increment --style-samples N`.
-Dataset-scenario checkpoints still use instance identities; isolate their
-configurations in separate output directories.
+Dataset-scenario checkpoints verify the formatted prompts, answer choices,
+reference answers, few-shot context, and generation settings before reuse.
+Changed or legacy contracts require a fresh output directory. Loader failures
+and short datasets remain in the saved report as incomplete scenarios; the CLI
+then exits unsuccessfully.
 
 The phase2 runner writes `suite_generations.jsonl` and
 `suite_evaluations_<judge>.jsonl` (or `suite_evaluations_heuristic.jsonl`) under
@@ -350,7 +359,16 @@ each suite directory, with `.manifest.json` files recording expected coverage,
 plus `benchmark_summary_<timestamp>.txt` at the output
 root. These files differ from the main CLI's aggregate results JSON.
 
-Style-suite reports include Wilson score intervals for detector hit rates. Conditions with fewer than 30 outputs are marked `low-n`.
+Style-suite reports include response-level Wilson intervals, which assume
+independent observations. Conditions with fewer than 30 outputs are marked
+`low-n`. Main-CLI reports also show distinct prompt counts and prompt-cluster
+intervals. The behavioral report flags fewer than 20 prompts, unknown coverage,
+and unavailable, degenerate, or wide prompt intervals. These are screening
+heuristics; passing them does not establish deployment safety.
+
+Model-run cost totals include primary and secondary judge calls. Relative uplift
+is null when the baseline is zero; LinkedIn summaries also report absolute
+changes in percentage points or mean counts.
 Style-suite JSON and text reports also include task segments, grouped by prompt `task_type`.
 Pairwise preference compares models on shared style-suite records and ranks lower detector-count outputs higher.
 Pairwise ranking supports `--pairwise-method count|bradley_terry`, segmentation via `--pairwise-segment-by none|task_type|condition`, and optional recency weighting via `--pairwise-time-decay-halflife-days`.

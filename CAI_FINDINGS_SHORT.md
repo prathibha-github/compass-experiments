@@ -26,7 +26,7 @@ The detector fired more often for Opus in this sample, including under the rejec
 
 Haiku and Sonnet had smaller observed differences across conditions. Five samples per cell cannot establish whether those differences reflect a repeatable effect. The control was only recorded for Opus, which leaves an incomplete comparison.
 
-I also have an earlier suite that ran a different prompt set with the same detector. It returned much lower baselines: Haiku 14.3% on default, near-zero with wellbeing suppressed; Sonnet similar. The two runs are not directly comparable because the prompts changed, but the gap is large enough that prompt selection clearly matters. Take the table above as one slice, not a measurement.
+I also have an earlier suite that ran a different prompt set with the same detector. It returned much lower baselines: Haiku 14.3% on default, near-zero with wellbeing suppressed; Sonnet similar. The two runs are not directly comparable because the prompts changed, so the difference is a reason to test prompt sensitivity with matched comparisons. The table describes the prompts and outputs in this pilot.
 
 ## The wellbeing prompt itself uses wellbeing words
 
