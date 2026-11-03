@@ -322,8 +322,9 @@ To deliberately rescore without regenerating, call Compass's
 `evaluate_suite_completions(..., resume=False)` on the saved generations.
 `--no-auto-resume` starts fresh generation as well as scoring.
 
-The summary breaks results down by model, condition, and detector with Wilson
-intervals. See [PHASE2_BENCHMARK.md](PHASE2_BENCHMARK.md) for suites and options.
+The phase2 text summary breaks results down by model, condition, and detector
+with response-level Wilson intervals. It does not display the prompt-cluster
+statistics available through Compass's summary helper. See [PHASE2_BENCHMARK.md](PHASE2_BENCHMARK.md) for suites and options.
 
 ## Outputs
 
@@ -332,6 +333,11 @@ subjects with balanced sampling and subject-matched demonstrations. BoolQ
 truncates passages to 800 characters, which can remove supporting evidence;
 TruthfulQA samples up to three distractors. Do not compare these scores directly
 with published full-benchmark results.
+
+Scenario summaries include `n_invalid` for unparseable answers. Those responses
+count as incorrect and are excluded from answer-confidence ECE. ECE also
+excludes responses missing an answer label in the returned token candidates;
+`ece_coverage` records the fraction included.
 
 The main CLI writes under `results/` by default:
 
@@ -366,7 +372,7 @@ intervals. The behavioral report flags fewer than 20 prompts, unknown coverage,
 and unavailable, degenerate, or wide prompt intervals. These are screening
 heuristics; passing them does not establish deployment safety.
 
-Model-run cost totals include primary and secondary judge calls. Relative uplift
+Main-CLI model-run cost totals include primary and secondary judge calls. Relative uplift
 is null when the baseline is zero; LinkedIn summaries also report absolute
 changes in percentage points or mean counts.
 Style-suite JSON and text reports also include task segments, grouped by prompt `task_type`.

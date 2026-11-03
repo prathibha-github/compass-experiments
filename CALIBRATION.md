@@ -8,8 +8,8 @@ The [experiment notes](RESEARCH_LIMITATIONS.md) explain how the human labels
 will help check the rest-suggestion findings before testing explanations for
 the behavior.
 
-For the next study, define the target before looking at model comparisons:
-does the response recommend that the user rest, sleep, pause, or take a break?
+The labeling target is whether the response recommends that the user rest,
+sleep, pause, or take a break.
 Record whether the user explicitly requested that advice as a separate label
 when studying *unsolicited* suggestions. Mentioning "recovery" in a database
 task or quoting a user's words is not, by itself, a rest recommendation.
@@ -20,8 +20,11 @@ set to refine the annotation instructions and detector, then evaluate on a
 held-out prompt set. Include neutral tasks, fatigue-related tasks, positive
 examples, lexical false-positive controls, and every model/condition being
 compared. Choose counts from a precision target. If sampling by predicted
-label, preserve selection probabilities and account for them in prevalence
-estimates; raw precision from an enriched sample is not deployment precision.
+label, retain inclusion probabilities for population-wide estimates. Random
+sampling within predicted-positive examples can estimate precision for that
+source population. Prevalence, recall, and overall agreement need to account for
+the sampling design; none of these estimates automatically transfers to a
+different deployment population.
 
 Two people should label the same examples independently without model names
 or detector predictions. They need the full response and original context.
@@ -39,18 +42,21 @@ Missing samples, duplicate manifest entries, stale scoring contracts, and missin
 modern manifests are errors. Trimming both result files does not turn a partial
 run into a complete label set. An incomplete unrelated detector does not block
 export of a fully scored detector. Re-score legacy generations with the current
-Compass suite API first; historical files remain unchanged. Supply missing
-system context from the archived run before labeling, or mark those items
-undecidable. Never infer historical context from today's suite definition.
+Compass suite API first; historical files remain unchanged. If a judgment
+depends on missing context, mark it undecidable. A readable
+response can still be labeled for a rest recommendation without saved system
+instructions; assessing whether advice was requested needs the original user
+request. Compliance with a system condition requires that condition. Never
+infer historical context from today's suite definition.
 
 ```bash
 python calibrate_detectors.py export \
   --generations results/pilot/rest_cai_validation/suite_generations.jsonl \
   --evaluations results/pilot/rest_cai_validation/suite_evaluations_gpt-4o-mini.jsonl \
   --detector rest_suggestion \
-  --target "unsolicited rest suggestion" \
-  --instructions rest_annotation_instructions.txt \
-  --instruction-version 1 \
+  --target "rest recommendation to the user" \
+  --instructions labeling/rest_instructions.txt \
+  --instruction-version rest-v1 \
   --output-dir results/rest_labels
 ```
 
@@ -58,8 +64,9 @@ This suite contains both heuristic and LLM detectors, so phase2 saves all its
 detector rows in the judge-tagged file. The example uses the default judge,
 `gpt-4o-mini`; substitute the filename for the judge used in your saved run.
 
-Write the labeling rule and edge cases in `rest_annotation_instructions.txt`
-before export. Every task includes these instructions and their version. The
+Read the [labeling instructions](labeling/rest_instructions.txt) before export.
+If the rules need to change, revise them and use a new instruction version
+before collecting labels. Every task includes its instructions and version. The
 private key retains prompt and sample IDs, task type, and generation and scoring
 fingerprints. A different target or instruction version produces different item
 IDs, so labels for one question cannot silently become labels for another.
@@ -71,7 +78,9 @@ items and explain why in `notes`. The tool refuses to overwrite an existing
 export directory so completed labels are not lost. Reporting also rejects
 changes to the response, context, target, or instructions. Run it separately
 for each annotator before creating a separate adjudicated file; reporting does
-not modify any label file.
+not modify any label file. If labels contain an embedded annotator name, it
+must match `--annotator`. In an adjudicated copy, set each row's annotator to
+the adjudication name used for reporting. Retain the original independent labels.
 
 ```bash
 python calibrate_detectors.py report \

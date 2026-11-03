@@ -120,8 +120,10 @@ Evaluation identities add the detector name. Completed records are skipped;
 missing generations or detector evaluations can be retried independently.
 
 Use a fresh output directory when changing prompts, system conditions,
-sampling settings, or generation budgets. Resume validates recorded token
-budgets but does not fingerprint the entire experiment definition. Increasing
+sampling settings, or generation budgets. Resume fingerprints the saved prompt
+and condition definitions, model, temperature, and token budget; scoring also
+checks detector definitions and saved generations. Custom-client behavior and
+provider changes behind a model alias remain outside those checks. Increasing
 `--samples` on an otherwise unchanged run requests additional sample indices.
 
 Adding a detector with a new name or selecting a new judge can score the saved
@@ -166,8 +168,11 @@ scale, so inspect the detector definition before comparing them.
 A fixed judge makes comparisons more consistent but does not eliminate judge
 bias. Audit examples, controls, invalid judge responses, and agreement with
 human labels. Use varied prompts and enough samples; repeated low-temperature
-outputs are not independent evidence, and Wilson intervals do not model shared
-prompt effects. See [Compass's scoring limitations](https://github.com/prathibha-github/compass#current-scoring-limitations)
+outputs are not independent evidence. This CLI's text summary uses response-level
+Wilson intervals, which do not model shared prompt effects. Compass's
+`summarize_suite_evaluations` helper provides distinct prompt counts and
+prompt-cluster intervals; these still describe individual cells, not differences
+between models or conditions. See [Compass's scoring limitations](https://github.com/prathibha-github/compass#current-scoring-limitations)
 for invalid-judgment handling. Follow [CALIBRATION.md](CALIBRATION.md) to export
 saved examples for independent human labeling and report detector error rates.
 
