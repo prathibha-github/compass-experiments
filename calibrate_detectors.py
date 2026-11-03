@@ -112,6 +112,10 @@ def task_fingerprint(task):
 
 def report_labels(keys, labels, *, annotator=None):
     predictions, humans = index_rows(keys), index_rows(labels)
+    if any("annotator" in row for row in labels):
+        if (not isinstance(annotator, str) or not annotator.strip() or
+                any(row.get("annotator") != annotator for row in labels)):
+            raise ValueError("Embedded annotators must all match the requested annotator")
     populations = [row.get("export_population") for row in keys]
     source_verified = False
     if any(population is not None for population in populations):

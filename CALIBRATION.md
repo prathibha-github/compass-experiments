@@ -98,3 +98,57 @@ sampling and exclusions, annotator agreement, adjudication decisions, detector
 error rates by condition, and uncertainty. Human calibration validates the
 measurement target; it does not identify the training mechanism behind the
 observed behavior.
+
+## Label responses in a browser
+
+`label_responses.py` builds a self-contained page that opens locally. It shows the
+full request and response, hides model names and detector predictions, and asks
+about rest recommendations and explicit requests for advice separately. The
+text itself may still reveal a model or condition. Each annotator uses their
+own name; labels are saved in that browser. Download the JSONL backup at the end
+of a session. You can import it on another browser using the same annotator name.
+
+For the existing rest-condition checkpoints, create a development set:
+
+```bash
+python label_responses.py \
+  --legacy-checkpoints results/rest_cai_validation/checkpoints/*.jsonl \
+  --output-dir results/rest_labels_development
+```
+
+Open `results/rest_labels_development/index.html`. Read the instructions before
+labeling. A saved `Cannot tell` answer needs a note. Draft answers remain
+unlabeled until you press **Save & next unreviewed**. Advice that was requested
+still counts as a rest recommendation; the second question records whether it
+was requested. These labels do not establish compliance with missing system
+instructions or identify a training mechanism.
+
+This legacy import retains every supplied row and its provenance, but cannot
+verify the original planned population. It rejects duplicate identities and
+contracted records rather than bypassing the modern export checks. It never
+fills missing context from current suites. Treat this first set as development
+data; use a separate prompt set for a later held-out assessment.
+
+The generated `private_key.jsonl` contains model identities and predictions.
+Keep it separate from the page you give annotators. The initial `labels.jsonl`
+is a blank template; browser saving does not modify it. Use the downloaded
+`rest-labels_NAME.jsonl` for analysis:
+
+```bash
+python calibrate_detectors.py report \
+  --key results/rest_labels_development/private_key.jsonl \
+  --labels /path/to/rest-labels_NAME.jsonl \
+  --annotator NAME
+```
+
+The report compares the recommendation label (`human_hit`) with the detector.
+The separate `advice_requested` label is retained in the download; it is not part
+of that detector-agreement report. A recommendation labeled true with a request
+labeled false is an unsolicited suggestion. Unknown values stay unresolved.
+
+For modern phase2 data, first use the validated export above with
+`--target "rest recommendation to the user"` and
+`--instructions labeling/rest_instructions.txt`. Then pass its untouched
+`labels.jsonl` to `label_responses.py --labels PATH --output-dir NEW_DIRECTORY`.
+Keep the original private key. The page builder refuses to overwrite a directory;
+load completed labels through the page's import control instead.
