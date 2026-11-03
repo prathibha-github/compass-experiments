@@ -53,6 +53,7 @@ def _summary_dict(res: EvalResults) -> Dict[str, Any]:
             "ece_coverage":     sr.ece_coverage,
             "robustness_score": sr.robustness_score,
             "n_completed":      sr.n_completed,
+            "n_invalid":        sr.n_invalid,
             "n_requested":      sr.n_requested,
             "checkpoint_jsonl": sr.checkpoint_path,
         }
@@ -296,6 +297,8 @@ def _append_accuracy_section(
                     f" [{sr.n_completed}/{sr.n_requested}]"
                     if sr.n_completed < sr.n_requested else ""
                 )
+                if sr.n_invalid:
+                    n_str += f" [invalid={sr.n_invalid}]"
                 row += f"  {sr.accuracy:>7.4f}  {ece_str:>10}  {rob_str:>7}{n_str}"
             else:
                 row += f"  {'N/A':>7}  {'N/A':>10}  {'N/A':>7}"

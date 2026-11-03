@@ -9,7 +9,7 @@ from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple
 from tqdm import tqdm
 
 from compass_experiments.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, model_config, model_provider
-from compass_experiments.metrics.accuracy import extract_mc_answer, multiple_choice_accuracy
+from compass_experiments.metrics.accuracy import ANSWER_PARSER_VERSION, extract_mc_answer, multiple_choice_accuracy
 from compass_experiments.metrics.calibration import compute_ece, extract_choice_probs
 from compass_experiments.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY
 from compass_experiments.metrics.pairwise_preference import analyze_pairwise_preference
@@ -286,7 +286,7 @@ class EvalRunner:
                 p_prompt = scenario.format_prompt(p_inst, few_shot)
             requests[inst.id] = (prompt, p_prompt)
             contracts[inst.id] = fingerprint({
-                "version": 1, "scenario": scenario.name,
+                "version": 1, "answer_parser_version": ANSWER_PARSER_VERSION, "scenario": scenario.name,
                 "model": model_name or getattr(client, "model", self.config.models),
                 "client": f"{type(client).__module__}.{type(client).__qualname__}",
                 "instance": asdict(inst), "prompt": prompt, "perturbed_prompt": p_prompt,
@@ -322,13 +322,18 @@ class EvalRunner:
                     resp   = client.complete(prompt, **request_settings)
                     pred   = extract_mc_answer(resp.completion, inst.choices)
                     probs, coverage = extract_choice_probs(resp.logprobs, inst.choices)
-                    conf   = probs.get(pred, 1.0 / len(inst.choices))
+                    conf   = probs.get(pred) if pred is not None else None
+                    if pred is None:
+                        coverage = 0.0
                     ok     = pred == inst.correct
 
                     p_ok: Optional[bool] = None
+                    p_pred = None
+                    p_completion = None
                     if run_robustness:
                         p_resp   = client.complete(p_prompt, **perturbed_settings)
-                        p_pred   = extract_mc_answer(p_resp.completion, inst.choices)
+                        p_completion = p_resp.completion
+                        p_pred   = extract_mc_answer(p_completion, inst.choices)
                         p_ok     = p_pred == inst.correct
 
                     record: dict = {
@@ -338,11 +343,14 @@ class EvalRunner:
                         "prompt":                prompt,
                         "completion":            resp.completion,
                         "prediction":            pred,
+                        "answer_valid":          pred is not None,
                         "correct":               inst.correct,
                         "is_correct":            ok,
                         "confidence":            conf,
                         "coverage":              coverage,
                         "perturbed_is_correct":  p_ok,
+                        "perturbed_prediction":  p_pred,
+                        "perturbed_completion":  p_completion,
                         "metadata":              inst.metadata,
                     }
                     if self.config.run_tag:

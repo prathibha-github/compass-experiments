@@ -124,3 +124,8 @@ training mechanism.
 The rest-suggestion study is about understanding that behavior. The same
 infrastructure can support a separate study of safety guidance, with a suite
 that defines what is being measured and which comparisons matter.
+
+Scenario accuracy counts invalid answer formats as incorrect, with `prediction`
+set to null and `n_invalid` reported separately. Those responses remain in the
+accuracy denominator but are excluded from answer-confidence ECE. Checkpoints
+from earlier answer parsers require a fresh output directory.
