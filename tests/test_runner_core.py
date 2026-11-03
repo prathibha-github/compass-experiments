@@ -293,7 +293,7 @@ class RunnerCoreTests(unittest.TestCase):
         self.assertEqual(summary_empty["overall"]["n"], 0)
         self.assertEqual(summary_empty["overall"]["agreement_pct"], 0.0)
 
-    def test_eval_scenario_continues_on_instance_error(self):
+    def test_eval_scenario_rejects_invalid_prompt_before_generation(self):
         class ScenarioStub:
             name = "stub"
 
@@ -320,15 +320,12 @@ class RunnerCoreTests(unittest.TestCase):
             with patch("compass_experiments.runner.extract_choice_probs", return_value=({"A": 0.8}, 1.0)), patch(
                 "compass_experiments.runner.extract_mc_answer", return_value="A"
             ):
-                sr = runner._eval_scenario(
-                    client=ClientStub(),
-                    scenario=ScenarioStub(),
-                    instances=instances,
-                    few_shot=[],
-                    run_robustness=False,
-                    checkpoint_path=ckpt_path,
-                )
-        self.assertEqual(sr.n_completed, 1)
+                with self.assertRaisesRegex(RuntimeError, "bad prompt"):
+                    runner._eval_scenario(
+                        client=ClientStub(), scenario=ScenarioStub(), instances=instances,
+                        few_shot=[], run_robustness=False, checkpoint_path=ckpt_path,
+                    )
+                self.assertFalse(os.path.exists(ckpt_path))
 
     def test_run_tic_suite_style_samples_increment_appends_new_records(self):
         class SubjectClient:
