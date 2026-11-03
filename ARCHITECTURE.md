@@ -39,7 +39,7 @@ flowchart TD
     Results -->|feeds| Analysis["Optional persona and pairwise analysis"]
     Results -->|feeds| Report["report.py, called by main.py"]
     Analysis -->|adds sections to| Report
-    Report -->|writes| Artifacts["Results JSON, summary text, safety-case Markdown"]
+    Report -->|writes| Artifacts["Results JSON, summary text, behavioral evaluation Markdown"]
 ```
 
 The client factory in `compass_experiments/models/__init__.py` selects thin
@@ -103,10 +103,24 @@ without dropping planned samples or replacing their responses. Phase2 uses
 Compass manifests to verify generation and evaluation coverage.
 
 Both LLM judge paths reject invalid scores and derive `hit` from their configured
-threshold. Prompt context still differs: main-CLI judges see completion text,
-while phase2 judges also receive the user request. Use phase2 for prompt-dependent
-rubrics such as unsolicited advice. Dataset-scenario and Compass BenchmarkSpec
-checkpoints retain their separate identity-based resume limitations.
+threshold. Both paths receive the saved user request alongside the completion.
+Main-CLI judging uses direct callbacks; phase2 also retains Compass judge-cache
+and audit artifacts.
+
+Dataset-scenario checkpoints verify formatted prompts, choices, reference answers,
+and generation settings. Compass BenchmarkSpec runs also validate generation
+and evaluation contracts. These formats remain separate; their files cannot be
+used interchangeably.
+
+Scenario loader failures remain in the saved report with requested counts and
+no accuracy value. Short datasets are marked incomplete. The CLI saves those
+reports before exiting unsuccessfully. Model-call failures retain completed
+checkpoint rows and raise so the run can be retried.
+
+Main-CLI style reports include distinct prompt counts and Compass prompt-cluster
+intervals alongside response-level Wilson intervals. The report flags limited
+prompt coverage; repeating one prompt does not supply more independent tasks.
+Total model-run cost includes primary and secondary judge calls.
 
 ## Key files
 
@@ -117,7 +131,7 @@ checkpoints retain their separate identity-based resume limitations.
 - [metrics/](compass_experiments/metrics/): local suites, metrics, and analysis helpers
 - [scenarios/](compass_experiments/scenarios/): dataset loaders
 - [phase2_benchmark.py](phase2_benchmark.py): two-phase suite orchestration
-- [report.py](compass_experiments/report.py): JSON, text, and safety-case reports
+- [report.py](compass_experiments/report.py): JSON, text, and behavioral evaluation reports
 
 See [PHASE2_BENCHMARK.md](PHASE2_BENCHMARK.md) for CLI usage and
 [Compass's architecture](https://github.com/prathibha-github/compass/blob/main/ARCHITECTURE.md)
