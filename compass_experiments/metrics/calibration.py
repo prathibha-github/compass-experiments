@@ -1,6 +1,10 @@
-from typing import Dict, List, Optional, Tuple
+from collections.abc import Mapping
+from numbers import Real
+from typing import Dict, List, Tuple
 
 import numpy as np
+
+CONFIDENCE_SCORING_VERSION = 2
 
 # Token strings the API might return for each label
 _LABEL_TOKENS: Dict[str, List[str]] = {
@@ -11,46 +15,52 @@ _LABEL_TOKENS: Dict[str, List[str]] = {
 }
 
 
+def serialize_top_logprobs(top_logprobs) -> List[dict]:
+    """Keep the first-token candidates needed to recompute confidence offline."""
+    records = []
+    for entry in top_logprobs or []:
+        token = entry.get("token") if isinstance(entry, Mapping) else entry.token
+        logprob = entry.get("logprob") if isinstance(entry, Mapping) else entry.logprob
+        if (not isinstance(token, str) or isinstance(logprob, bool)
+                or not isinstance(logprob, Real) or not np.isfinite(logprob) or logprob > 0):
+            raise ValueError("Token log probabilities must be finite, nonpositive numbers")
+        records.append({"token": token, "logprob": float(logprob)})
+    return records
+
+
 def extract_choice_probs(
     top_logprobs,
     valid_choices: List[str],
 ) -> Tuple[Dict[str, float], float]:
+    """Aggregate observed token spellings, then normalize across answer labels.
+
+    Confidence is conditional on observed answer-token mass, not the full token
+    vocabulary. Coverage counts labels with an observed spelling; even coverage
+    of 1 does not mean every spelling was returned in the API's top-k list.
+    Missing labels retain the -10 fallback and must be excluded from ECE.
+    Accept SDK token objects or the serialized dictionaries saved in checkpoints.
     """
-    Convert top_logprobs from OpenAI (at token-0) into probabilities for each
-    valid choice.
+    if not valid_choices or len(set(valid_choices)) != len(valid_choices):
+        raise ValueError("Choice labels must be nonempty and unique")
+    tokens = {}
+    for entry in serialize_top_logprobs(top_logprobs):
+        token, logprob = entry["token"], entry["logprob"]
+        if token in tokens and tokens[token] != logprob:
+            raise ValueError(f"Conflicting probabilities for duplicate token {token!r}")
+        tokens[token] = logprob  # A repeated candidate is not extra probability mass.
 
-    Returns
-    -------
-    probs    : dict mapping each choice label to its normalised probability
-    coverage : fraction of valid choice labels actually found in top_logprobs
-               (< 1.0 means some choices were filled with -10 fallback log-prob,
-               making the resulting probabilities unreliable for ECE)
-    """
-    if not top_logprobs:
-        uniform = 1.0 / len(valid_choices)
-        return {c: uniform for c in valid_choices}, 0.0
-
-    lp_map: Dict[str, float] = {}
-    for lp in top_logprobs:
-        tok = lp.token
-        for choice in valid_choices:
-            if choice not in lp_map and tok in _LABEL_TOKENS.get(choice, []):
-                lp_map[choice] = lp.logprob
-
-    found    = set(lp_map)
-    coverage = len(found) / len(valid_choices)
-
-    # Fill any unseen choice with a low log-prob so the softmax still sums to 1,
-    # but callers should check coverage < 1.0 before trusting ECE.
-    for c in valid_choices:
-        if c not in lp_map:
-            lp_map[c] = -10.0
-
-    log_vals = np.array([lp_map[c] for c in valid_choices], dtype=float)
-    log_vals -= log_vals.max()
-    probs    = np.exp(log_vals)
-    probs   /= probs.sum()
-    return {c: float(p) for c, p in zip(valid_choices, probs)}, coverage
+    choice_logs = {}
+    for choice in valid_choices:
+        spellings = _LABEL_TOKENS.get(choice, [])
+        values = [tokens[token] for token in sorted(tokens) if token in spellings]
+        if values:
+            choice_logs[choice] = float(np.logaddexp.reduce(values))
+    coverage = len(choice_logs) / len(valid_choices)
+    log_values = np.array([choice_logs.get(choice, -10.0) for choice in valid_choices])
+    log_values -= log_values.max()
+    probabilities = np.exp(log_values)
+    probabilities /= probabilities.sum()
+    return dict(zip(valid_choices, map(float, probabilities))), coverage
 
 
 def compute_ece(confidences: List[float], correct_flags: List[bool], n_bins: int = 10) -> float:

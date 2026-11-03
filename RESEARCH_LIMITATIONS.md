@@ -129,3 +129,12 @@ Scenario accuracy counts invalid answer formats as incorrect, with `prediction`
 set to null and `n_invalid` reported separately. Those responses remain in the
 accuracy denominator but are excluded from answer-confidence ECE. Checkpoints
 from earlier answer parsers require a fresh output directory.
+
+Scenario confidence sums the observed token spellings of each answer label, then
+normalizes over those labels. It is conditional on the answer tokens returned
+by the API. Finding every label does not mean the top-k list contains every
+possible spelling, or the full vocabulary. ECE excludes responses missing any
+label. New checkpoints save the returned first-token candidates, answer choices,
+and confidence-scoring version for offline recomputation. Older checkpoints
+lack those candidates and cannot be corrected from their confidence alone;
+resuming them requires a fresh output directory.

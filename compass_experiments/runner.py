@@ -10,7 +10,9 @@ from tqdm import tqdm
 
 from compass_experiments.config import DEFAULT_SCENARIO_CONFIGS, EvalConfig, model_config, model_provider
 from compass_experiments.metrics.accuracy import ANSWER_PARSER_VERSION, extract_mc_answer, multiple_choice_accuracy
-from compass_experiments.metrics.calibration import compute_ece, extract_choice_probs
+from compass_experiments.metrics.calibration import (
+    CONFIDENCE_SCORING_VERSION, compute_ece, extract_choice_probs, serialize_top_logprobs,
+)
 from compass_experiments.metrics.builtin_tic_suites import STYLE_SUITE_REGISTRY
 from compass_experiments.metrics.pairwise_preference import analyze_pairwise_preference
 from compass_experiments.metrics.persona_transfer import analyze_persona_transfer
@@ -287,7 +289,8 @@ class EvalRunner:
                 p_prompt = scenario.format_prompt(p_inst, few_shot)
             requests[inst.id] = (prompt, p_prompt)
             contracts[inst.id] = fingerprint({
-                "version": 1, "answer_parser_version": ANSWER_PARSER_VERSION, "scenario": scenario.name,
+                "version": 1, "answer_parser_version": ANSWER_PARSER_VERSION,
+                "confidence_scoring_version": CONFIDENCE_SCORING_VERSION, "scenario": scenario.name,
                 "model": model_name or getattr(client, "model", self.config.models),
                 "client": f"{type(client).__module__}.{type(client).__qualname__}",
                 "instance": asdict(inst), "prompt": prompt, "perturbed_prompt": p_prompt,
@@ -323,7 +326,8 @@ class EvalRunner:
                     prompt, p_prompt = requests[inst.id]
                     resp   = client.complete(prompt, **request_settings)
                     pred   = extract_mc_answer(resp.completion, inst.choices)
-                    probs, coverage = extract_choice_probs(resp.logprobs, inst.choices)
+                    token_candidates = serialize_top_logprobs(resp.logprobs)
+                    probs, coverage = extract_choice_probs(token_candidates, inst.choices)
                     conf   = probs.get(pred) if pred is not None else None
                     if pred is None:
                         coverage = 0.0
@@ -351,6 +355,10 @@ class EvalRunner:
                         "correct":               inst.correct,
                         "is_correct":            ok,
                         "confidence":            conf,
+                        "confidence_scoring_version": CONFIDENCE_SCORING_VERSION,
+                        "choices":               list(inst.choices),
+                        "top_logprobs":           token_candidates,
+                        "choice_probabilities":   probs,
                         "coverage":              coverage,
                         "perturbed_is_correct":  p_ok,
                         "perturbed_prediction":  p_pred,
