@@ -139,3 +139,34 @@ class ScenarioResumeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'inputs changed'):
             run(self.tmp_path, fake)
         fake.complete.assert_not_called()
+
+    def test_confidence_version_invalidates_previous_scores_before_calls_or_writes(self):
+        from unittest.mock import patch
+        with patch('compass_experiments.runner.CONFIDENCE_SCORING_VERSION', 1):
+            run(self.tmp_path, client())
+        before = {p.name: p.read_bytes() for p in self.tmp_path.iterdir()}
+        fake = client()
+        with self.assertRaisesRegex(ValueError, 'inputs changed'):
+            run(self.tmp_path, fake)
+        fake.complete.assert_not_called()
+        self.assertEqual(before, {p.name: p.read_bytes() for p in self.tmp_path.iterdir()})
+
+    def test_saved_token_candidates_reproduce_confidence_without_model_calls(self):
+        import json
+        import math
+        from compass_experiments.metrics.calibration import CONFIDENCE_SCORING_VERSION, extract_choice_probs
+        fake = client()
+        fake.complete.return_value.logprobs = [SimpleNamespace(token=token, logprob=math.log(probability))
+            for token, probability in [('B', .3), ('A', .2), (' A', .2), ('C', .2), ('D', .1)]]
+        question = replace(instance(), choices=list('ABCD'), choice_texts=['one', 'two', 'three', 'four'])
+        result = run(self.tmp_path, fake, instances=[question])
+        self.assertAlmostEqual(result.ece, .6)
+        row = json.loads((self.tmp_path/'scenario.jsonl').read_text())
+        self.assertEqual(row['confidence_scoring_version'], CONFIDENCE_SCORING_VERSION)
+        self.assertEqual(len(row['top_logprobs']), 5)
+        probabilities, coverage = extract_choice_probs(row['top_logprobs'], row['choices'])
+        self.assertEqual(probabilities, row['choice_probabilities'])
+        self.assertEqual(coverage, row['coverage'])
+        self.assertEqual(probabilities[row['prediction']], row['confidence'])
+        run(self.tmp_path, fake, instances=[question])
+        self.assertEqual(fake.complete.call_count, 1)
