@@ -396,6 +396,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     print(f"Summary   : {txt_path}")
     if safety_path:
         print(f"Safety Case: {safety_path}")
+    if any(sr.status != "complete" for result in results.values()
+           for sr in result.scenario_results.values()):
+        raise SystemExit("Requested scenarios are incomplete; see saved reports for details.")
 
 
 if __name__ == "__main__":

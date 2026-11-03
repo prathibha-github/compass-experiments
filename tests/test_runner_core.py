@@ -10,6 +10,7 @@ import os
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from compass_experiments.config import ScenarioConfig
 from compass_experiments.metrics.tic_suite import (
@@ -110,11 +111,8 @@ class RunnerCoreTests(unittest.TestCase):
 
         cfg = self._config(scenarios=["unknown_scenario"], style_only=False)
         runner = EvalRunner(cfg)
-        with self.assertLogs("compass_experiments.runner", level="WARNING") as logs:
-            result = runner._run_model(SubjectClient(), "gpt-4o-mini")
-        self.assertIn("Unknown scenario", "\n".join(logs.output))
-        self.assertEqual(result.token_usage, {"input": 11, "output": 4})
-        self.assertEqual(result.total_cost_usd, 0.01)
+        with self.assertRaisesRegex(ValueError, "Unknown scenario"):
+            runner._run_model(SubjectClient(), "gpt-4o-mini")
 
     def test_run_model_handles_load_error(self):
         class BrokenScenario:
@@ -138,7 +136,8 @@ class RunnerCoreTests(unittest.TestCase):
         ):
             with self.assertLogs("compass_experiments.runner", level="ERROR") as logs:
                 result = runner._run_model(SubjectClient(), "gpt-4o-mini")
-        self.assertEqual(result.scenario_results, {})
+        self.assertEqual(result.scenario_results["broken"].status, "failed")
+        self.assertIsNone(result.scenario_results["broken"].accuracy)
         self.assertIn("Failed to load broken", "\n".join(logs.output))
 
     def test_run_model_mixed_scenario_success_and_failure(self):
@@ -178,12 +177,12 @@ class RunnerCoreTests(unittest.TestCase):
         ), patch.object(
             runner,
             "_eval_scenario",
-            return_value=object(),
+            return_value=SimpleNamespace(n_completed=1),
         ) as eval_mock:
             with self.assertLogs("compass_experiments.runner", level="ERROR") as logs:
                 result = runner._run_model(SubjectClient(), "gpt-4o-mini")
         self.assertIn("good", result.scenario_results)
-        self.assertNotIn("bad", result.scenario_results)
+        self.assertEqual(result.scenario_results["bad"].status, "failed")
         self.assertEqual(eval_mock.call_count, 1)
         self.assertIn("Failed to load bad", "\n".join(logs.output))
 

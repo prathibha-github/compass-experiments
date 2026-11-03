@@ -1,4 +1,3 @@
-import math
 import random
 from typing import List, Tuple
 
@@ -9,7 +8,7 @@ from compass_experiments.scenarios.base import Instance, Scenario
 LABELS = ["A", "B", "C", "D"]
 SUBJECTS = [
     "anatomy",
-    "high_school_history",
+    "high_school_us_history",
     "college_mathematics",
     "professional_law",
 ]
@@ -21,22 +20,26 @@ class MMLUScenario(Scenario):
 
     def load(self, n_samples: int, n_few_shot: int, seed: int = 42) -> Tuple[List[Instance], List[Instance]]:
         rng      = random.Random(seed)
-        # Ceiling division so total >= n_samples regardless of n_samples % n_subjects
-        per_subj = max(1, math.ceil(n_samples / len(SUBJECTS)))
+        # Allocate the remainder with the seed, independently of subject order.
+        subject_order = sorted(SUBJECTS)
+        rng.shuffle(subject_order)
+        base, remainder = divmod(n_samples, len(subject_order))
+        allocation = {subject: base + (i < remainder)
+                      for i, subject in enumerate(subject_order)}
         test_instances: List[Instance] = []
         few_shot_pool:  List[Instance] = []
 
-        for subj in SUBJECTS:
+        for subj in subject_order:
             ds = load_dataset("cais/mmlu", subj, trust_remote_code=True)
             test_split = list(ds["test"])
             dev_split  = list(ds.get("dev") or ds.get("validation") or [])
 
             rng.shuffle(test_split)
-            test_instances += [self._make(ex, subj, i) for i, ex in enumerate(test_split[:per_subj])]
+            test_instances += [self._make(ex, subj, i) for i, ex in enumerate(test_split[:allocation[subj]])]
             few_shot_pool  += [self._make(ex, subj, f"fs{i}") for i, ex in enumerate(dev_split[:n_few_shot])]
 
-        # Trim to exactly n_samples (ceiling can overshoot by up to n_subjects-1)
-        return test_instances[:n_samples], few_shot_pool[:n_few_shot]
+        rng.shuffle(test_instances)
+        return test_instances, few_shot_pool
 
     def _make(self, ex, subject, idx) -> Instance:
         choices = ex["choices"]
@@ -46,12 +49,15 @@ class MMLUScenario(Scenario):
             choices=LABELS[:len(choices)],
             choice_texts=choices,
             correct=LABELS[ex["answer"]],
-            metadata={"subject": subject},
+            metadata={"subject": subject, "sampling_policy": "balanced_subjects_v2",
+                      "few_shot_policy": "same_subject"},
         )
 
     def format_prompt(self, instance: Instance, few_shot: List[Instance]) -> str:
         parts = ["The following are multiple choice questions (with answers).\n"]
         for ex in few_shot:
+            if ex.metadata["subject"] != instance.metadata["subject"]:
+                continue
             parts.append(self._fmt(ex, answer=True))
         parts.append(self._fmt(instance, answer=False))
         return "\n".join(parts)
