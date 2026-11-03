@@ -2,15 +2,17 @@ import re
 from typing import List
 
 
-def extract_mc_answer(completion: str, valid_choices: List[str]) -> str:
-    c = completion.strip().upper()
+ANSWER_PARSER_VERSION = 2
+
+
+def extract_mc_answer(completion: str, valid_choices: List[str]):
+    """Return an explicit leading choice label, or None for an invalid answer."""
+    text = completion.strip().upper()
     for choice in valid_choices:
-        if c == choice or c.startswith(choice + ".") or c.startswith(choice + " "):
+        # A label may be followed by punctuation or whitespace, not a word suffix.
+        if re.match(r"^" + re.escape(choice.upper()) + r"(?:$|[.):]|\s)", text):
             return choice
-    m = re.match(r"^([A-D])", c)
-    if m and m.group(1) in valid_choices:
-        return m.group(1)
-    return valid_choices[0]
+    return None
 
 
 def multiple_choice_accuracy(predictions: List[str], references: List[str]) -> float:

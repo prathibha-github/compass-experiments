@@ -107,3 +107,35 @@ class ScenarioResumeTests(unittest.TestCase):
             self.assertEqual(call.kwargs['max_tokens'], 1)
         self.assertIs(fake.complete.call_args_list[0].kwargs['logprobs'], True)
         self.assertIs(fake.complete.call_args_list[1].kwargs['logprobs'], False)
+
+    def test_invalid_answers_are_incorrect_and_not_calibrated(self):
+        for reply in ['I cannot answer.', 'Banana', '', 'Cannot tell']:
+            with self.subTest(reply=reply), tempfile.TemporaryDirectory() as directory:
+                fake = client()
+                fake.complete.return_value.completion = reply
+                result = run(Path(directory), fake, robustness=True)
+                self.assertEqual(result.accuracy, 0.0)
+                self.assertEqual(result.n_completed, 1)
+                self.assertEqual(result.n_invalid, 1)
+                self.assertIsNone(result.ece)
+                import json
+                row = json.loads((Path(directory)/'scenario.jsonl').read_text())
+                self.assertIsNone(row['prediction'])
+                self.assertFalse(row['perturbed_is_correct'])
+                self.assertIsNone(row['confidence'])
+
+    def test_parser_requires_a_label_boundary(self):
+        from compass_experiments.metrics.accuracy import extract_mc_answer
+        for reply in ['A', ' b ', 'C. Explanation', 'D) Reason', 'A: answer', 'A\r\nExplanation', 'B\u00a0Explanation']:
+            self.assertEqual(extract_mc_answer(reply, list('ABCD')), reply.strip()[0].upper())
+        for reply in ['Banana', 'Actually no', 'CANNOT', 'Definitely', 'E']:
+            self.assertIsNone(extract_mc_answer(reply, list('ABCD')))
+
+    def test_parser_version_invalidates_previous_scores(self):
+        from unittest.mock import patch
+        with patch('compass_experiments.runner.ANSWER_PARSER_VERSION', 1):
+            run(self.tmp_path, client())
+        fake = client()
+        with self.assertRaisesRegex(ValueError, 'inputs changed'):
+            run(self.tmp_path, fake)
+        fake.complete.assert_not_called()

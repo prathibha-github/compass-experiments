@@ -24,6 +24,7 @@ class ScenarioResults:
     n_completed: int
     n_requested: int
     checkpoint_path: str
+    n_invalid: int = 0
     ambig_unknown_rate: Optional[float] = None
     disambig_accuracy: Optional[float] = None
 
@@ -83,7 +84,7 @@ def aggregate_scenario_results(
     full_cov_pairs = [
         (c, f)
         for c, f, cov in zip(confidences, correct_flags, coverages)
-        if cov >= 1.0
+        if cov >= 1.0 and c is not None
     ]
     ece_coverage = len(full_cov_pairs) / len(records) if records else 0.0
     if full_cov_pairs:
@@ -115,6 +116,7 @@ def aggregate_scenario_results(
         ece_coverage=round(ece_coverage, 4),
         robustness_score=round(rob_score, 4) if rob_score is not None else None,
         n_completed=len(records),
+        n_invalid=sum(r["prediction"] is None for r in records),
         n_requested=n_requested,
         checkpoint_path=checkpoint_path,
     )
