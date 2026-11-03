@@ -181,8 +181,7 @@ class EvalRunner:
         if not self.config.linkedin_only and not self.config.style_only:
             for sname in self.config.scenarios:
                 if sname not in SCENARIO_REGISTRY:
-                    logger.warning("Unknown scenario: %s — skipping", sname)
-                    continue
+                    raise ValueError(f"Unknown scenario: {sname}")
                 cfg = DEFAULT_SCENARIO_CONFIGS[sname]
                 n   = self.config.n_samples or cfg.n_samples
                 logger.info("  Scenario: %s  (n=%d)", sname, n)
@@ -192,6 +191,12 @@ class EvalRunner:
                     test_instances, few_shot = scenario.load(n, cfg.n_few_shot, self.config.seed)
                 except Exception as exc:
                     logger.error("  Failed to load %s: %s", sname, exc)
+                    result.scenario_results[sname] = ScenarioResults(
+                        name=sname, accuracy=None, ece=None, ece_coverage=0.0,
+                        robustness_score=None, n_completed=0, n_requested=n,
+                        checkpoint_path="", status="failed",
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
                     continue
 
                 ckpt_path = self._checkpoint_path(model_name, sname)
@@ -201,6 +206,11 @@ class EvalRunner:
                     checkpoint_path=ckpt_path,
                     model_name=model_name,
                 )
+                sr = result.scenario_results[sname]
+                sr.n_requested = n
+                if sr.n_completed < n:
+                    sr.status = "incomplete"
+                    sr.error = f"Loaded {len(test_instances)} of {n} requested instances"
 
         if self.config.run_quirk_detection:
             logger.info("  Quirk detection...")

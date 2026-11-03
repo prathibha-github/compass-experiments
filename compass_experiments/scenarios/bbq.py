@@ -33,7 +33,7 @@ class BBQScenario(Scenario):
 
         test_instances = [self._make(ex, i) for i, ex in enumerate(selected)]
         # use disambiguated examples for few-shot so the model sees "correct" answers
-        few_shot_pool  = [self._make(ex, f"fs{i}") for i, ex in enumerate(disambig[half: half + n_few_shot * 2])]
+        few_shot_pool  = [self._make(ex, f"fs{i}") for i, ex in enumerate(disambig[half_disambig: half_disambig + n_few_shot])]
         return test_instances, few_shot_pool[:n_few_shot]
 
     def _make(self, ex, idx) -> Instance:

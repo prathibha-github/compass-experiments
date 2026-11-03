@@ -48,6 +48,8 @@ def _summary_dict(res: EvalResults) -> Dict[str, Any]:
     }
     for name, sr in res.scenario_results.items():
         entry: dict = {
+            "status":           sr.status,
+            "error":            sr.error,
             "accuracy":         sr.accuracy,
             "ece":              sr.ece,
             "ece_coverage":     sr.ece_coverage,
@@ -287,7 +289,7 @@ def _append_accuracy_section(
         row = f"{sname:<{col}}"
         for m in models:
             sr = results_by_model[m].scenario_results.get(sname)
-            if sr:
+            if sr and sr.accuracy is not None:
                 ece_str = (
                     f"{sr.ece:.4f}({sr.ece_coverage:.0%})"
                     if sr.ece is not None else "     N/A    "
@@ -302,12 +304,14 @@ def _append_accuracy_section(
                 row += f"  {sr.accuracy:>7.4f}  {ece_str:>10}  {rob_str:>7}{n_str}"
             else:
                 row += f"  {'N/A':>7}  {'N/A':>10}  {'N/A':>7}"
+            if sr and sr.status != "complete":
+                row += f" [{sr.status}: {sr.n_completed}/{sr.n_requested}; {sr.error}]"
         lines.append(row)
 
     lines.append("-" * 96)
     for m, res in results_by_model.items():
-        accs = [sr.accuracy for sr in res.scenario_results.values()]
-        if accs:
+        accs = [sr.accuracy for sr in res.scenario_results.values() if sr.status == "complete" and sr.accuracy is not None]
+        if accs and all(sr.status == "complete" for sr in res.scenario_results.values()):
             lines.append(f"{'Mean':<{col}}  {sum(accs)/len(accs):>7.4f}   [{m}]")
 
 
@@ -439,7 +443,7 @@ def _append_model_result_sections(
 
 def format_table(results_by_model: Dict[str, EvalResults]) -> str:
     models = list(results_by_model.keys())
-    snames = list(next(iter(results_by_model.values())).scenario_results.keys())
+    snames = list(dict.fromkeys(name for res in results_by_model.values() for name in res.scenario_results))
     sep    = "=" * 96
     lines  = [sep, "  COMPASS EXPERIMENT RESULTS", f"  {datetime.now():%Y-%m-%d %H:%M:%S}", sep, ""]
 

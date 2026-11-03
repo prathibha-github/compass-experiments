@@ -17,7 +17,7 @@ TIC_CHECKPOINT_SCHEMA_VERSION = 1
 @dataclass
 class ScenarioResults:
     name: str
-    accuracy: float
+    accuracy: Optional[float]
     ece: Optional[float]
     ece_coverage: float
     robustness_score: Optional[float]
@@ -27,6 +27,8 @@ class ScenarioResults:
     n_invalid: int = 0
     ambig_unknown_rate: Optional[float] = None
     disambig_accuracy: Optional[float] = None
+    status: str = "complete"
+    error: Optional[str] = None
 
 
 def load_scenario_checkpoint(path: str, logger: logging.Logger) -> Dict[str, dict]:
@@ -60,7 +62,8 @@ def aggregate_scenario_results(
     if not records:
         return ScenarioResults(
             name=name,
-            accuracy=0.0,
+            accuracy=None,
+            status="incomplete",
             ece=None,
             ece_coverage=0.0,
             robustness_score=None,
