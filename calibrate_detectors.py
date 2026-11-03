@@ -22,7 +22,11 @@ def index_rows(rows):
     return indexed
 
 
-def export_tasks(generations_path, evaluations_path, detector):
+def export_tasks(generations_path, evaluations_path, detector, *, annotation_target, instructions, instruction_version):
+    if not all(isinstance(value, str) and value.strip() for value in (annotation_target, instructions, instruction_version)):
+        raise ValueError("Annotation target, instructions, and instruction version are required")
+    annotation = {"annotation_target": annotation_target, "instructions": instructions,
+                  "instruction_version": instruction_version}
     generations = load_suite_generations(Path(generations_path), strict=True)
     tasks, keys = [], []
     seen = set()
@@ -40,13 +44,19 @@ def export_tasks(generations_path, evaluations_path, detector):
             raise ValueError("Re-score legacy evaluations before calibration")
         if row.get("generation_fingerprint") != fingerprint(gen):
             raise ValueError("Evaluation does not match the saved generation; re-score before calibration")
-        item_id = fingerprint({"generation": gen, "detector": detector})
-        tasks.append({"id": item_id, "prompt": gen.get("prompt_text"),
+        item_id = fingerprint({"generation": gen, "detector": detector, "annotation": annotation})
+        task = {"id": item_id, **annotation, "prompt": gen.get("prompt_text"),
                       "system_prompt": gen.get("system_prompt"), "completion": gen["completion"],
-                      "human_hit": None, "notes": ""})
+                      "human_hit": None, "notes": ""}
+        tasks.append(task)
         keys.append({"id": item_id, "predicted_hit": row["hit"], "model": row["model"],
                      "condition": row["condition"], "detector": detector,
-                     "evaluation_contract": row["evaluation_contract"]})
+                     "evaluation_contract": row["evaluation_contract"],
+                     "suite": row["suite"], "prompt_id": row["prompt_id"],
+                     "sample_idx": row.get("sample_idx", 0), "task_type": gen.get("task_type"),
+                     "generation_fingerprint": row["generation_fingerprint"],
+                     "annotation_target": annotation_target, "instruction_version": instruction_version,
+                     "task_fingerprint": task_fingerprint(task)})
     if not tasks:
         raise ValueError("No matching scored examples")
     if len(seen) != len(generations):
@@ -55,11 +65,26 @@ def export_tasks(generations_path, evaluations_path, detector):
     return sorted(tasks, key=lambda row: row["id"]), keys
 
 
-def report_labels(keys, labels):
+def task_fingerprint(task):
+    fields = ("id", "prompt", "system_prompt", "completion", "annotation_target", "instructions", "instruction_version")
+    if any(field not in task for field in fields):
+        raise ValueError("Label file is missing its original task or instructions; export a new label set")
+    return fingerprint({field: task[field] for field in fields})
+
+
+def report_labels(keys, labels, *, annotator=None):
     predictions, humans = index_rows(keys), index_rows(labels)
+    for key, row in humans.items():
+        if key not in predictions or task_fingerprint(row) != predictions[key].get("task_fingerprint"):
+            raise ValueError("Label task or instructions changed; use the original export")
     expected = {key: row["predicted_hit"] for key, row in predictions.items()}
     actual = {key: row["human_hit"] for key, row in humans.items()}
     report = compare_human_labels(expected, actual)
+    report["annotator"] = annotator
+    report["labels_fingerprint"] = fingerprint(labels)
+    report["key_fingerprint"] = fingerprint(keys)
+    report["annotation_targets"] = sorted({row["annotation_target"] for row in keys})
+    report["instruction_versions"] = sorted({row["instruction_version"] for row in keys})
     groups = {}
     for row in keys:
         group = (row["model"], row["condition"], row["detector"])
@@ -80,18 +105,24 @@ def main():
     export.add_argument("--evaluations", required=True)
     export.add_argument("--detector", required=True)
     export.add_argument("--output-dir", required=True)
+    export.add_argument("--target", required=True, help="Behavior the human should label")
+    export.add_argument("--instructions", required=True, help="Path to labeling instructions")
+    export.add_argument("--instruction-version", required=True)
     report = commands.add_parser("report")
     report.add_argument("--key", required=True)
     report.add_argument("--labels", required=True)
+    report.add_argument("--annotator", required=True)
     args = parser.parse_args()
     if args.command == "export":
-        tasks, keys = export_tasks(args.generations, args.evaluations, args.detector)
+        tasks, keys = export_tasks(args.generations, args.evaluations, args.detector,
+            annotation_target=args.target, instructions=Path(args.instructions).read_text(),
+            instruction_version=args.instruction_version)
         out = Path(args.output_dir)
         out.mkdir(parents=True, exist_ok=False)
         (out / "labels.jsonl").write_text("".join(json.dumps(row) + "\n" for row in tasks))
         (out / "private_key.jsonl").write_text("".join(json.dumps(row) + "\n" for row in keys))
     else:
-        print(json.dumps(report_labels(read_rows(args.key), read_rows(args.labels)), indent=2))
+        print(json.dumps(report_labels(read_rows(args.key), read_rows(args.labels), annotator=args.annotator), indent=2))
 
 
 if __name__ == "__main__":
