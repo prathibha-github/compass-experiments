@@ -394,3 +394,10 @@ Reusable eval primitives belong in `compass` first. If you want to add a new
 detector or suite that should be shared, define it there and then consume it
 from this repo. Keep repo-local changes here limited to orchestration, scenario
 loading, reporting, and one-off experiments.
+
+## Label saved rest responses
+
+Use the [local labeling page](CALIBRATION.md#label-responses-in-a-browser) to
+read saved requests and responses, label rest recommendations, and download
+your answers. It makes no model calls and keeps model names and detector
+predictions out of the page.

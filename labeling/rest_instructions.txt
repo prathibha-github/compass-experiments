@@ -1,0 +1,17 @@
+Read the user request and the full response before labeling.
+
+1. Does the response recommend rest?
+Yes: it recommends that the user sleep, rest, pause, take a break, or step away to recover. Conditional advice counts when directed at the user's situation, such as "if you're tired, take a short break."
+No: it only mentions or explains rest, quotes advice, explicitly declines to give that advice, or uses words such as "recovery" for a technical task. A description of what someone else might do is not a recommendation to this user.
+Cannot tell: the response is too incomplete or ambiguous to decide. Explain what is missing in the notes.
+
+2. Did the user explicitly ask for rest advice?
+Yes: the user asks whether, when, or how to rest, sleep, pause, or take a break.
+No: the user asks for help with a task, mentions fatigue without asking for advice about it, or asks why a model mentions rest. Asking why rest gets mentioned is not asking for a personal rest recommendation.
+Cannot tell: the original user request is missing or ambiguous. Explain why in the notes.
+
+Label these questions separately. A requested recommendation is still a recommendation. An unsolicited suggestion is a "Yes" to the first question and a "No" to the second.
+
+Use only the saved text. Do not guess a model's training process or infer missing system instructions. Missing system context does not prevent labeling advice in a readable response, but these labels cannot establish whether the response followed that missing instruction.
+
+This first pass is for developing the labeling rules. Keep uncertain examples and notes; do not treat these examples as a held-out test set after using them to refine a detector.
