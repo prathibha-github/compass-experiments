@@ -17,8 +17,8 @@ it responding to something in my prompt? Treating a mention of fatigue as a
 request for advice? Or would it make the suggestion even when the task and
 instructions gave it little reason to?
 
-The results are preliminary. I haven't checked the detector scores against
-independent human labels yet.
+The results remain preliminary until the detector scores have been checked
+against independent human labels.
 
 ## I need to check what the detectors are counting
 
@@ -27,16 +27,20 @@ are different things. The current keyword detector can't reliably distinguish
 them. “Recovery” could refer to a database, and a response can discuss a rest
 suggestion without making one.
 
-I plan to have two people independently label whether a response recommends
-rest and whether the user asked for that advice. An example such as “I'm
-exhausted; help me fix this bug” needs an agreed interpretation, or an uncertain
-label. Advice can be appropriate even when it wasn't explicitly requested.
+The [labeling page](CALIBRATION.md#label-responses-in-a-browser) records whether
+a response recommends rest and whether the user explicitly asked for that
+advice. The instructions treat “I'm exhausted; help me fix this bug” as a task
+request, not an explicit request for rest advice. I still need to check that
+people apply these rules consistently. Advice can be appropriate even when it
+wasn't explicitly requested.
 
 The `rest_suggestion` detector can then be checked against the recommendation
 labels. `unsolicited_rest_judge` needs the combined judgment: a recommendation
 was made and the user didn't request it. Comparing both against the same label
-would mix up two different questions. The current labeling helper handles one
-binary target at a time, so these need separate annotation records.
+would mix up two different questions. The page saves both labels in one record.
+The calibration report currently compares only the recommendation label with
+the detector; checking `unsolicited_rest_judge` will need a separate comparison
+that combines the labels and retains unresolved cases.
 
 The [calibration protocol](CALIBRATION.md) covers the labeling process. Here,
 calibration means checking detector scores against human judgments. The ECE
@@ -75,14 +79,17 @@ For the follow-up, I need to balance broader task coverage and neutral controls
 against the API budget, then choose comparisons the sample can support. Saved
 responses let me compare scoring methods without paying to generate them again.
 Repeated responses to the same prompt shouldn't be treated as independent
-tasks. I'll keep model and condition results separate and account for shared
-prompts when estimating uncertainty.
+tasks. Reports keep model and condition results separate. The main CLI also
+shows distinct prompt counts and prompt-cluster intervals. Phase2's text report
+still shows response-level Wilson intervals. Comparisons between models or
+conditions need an interval for the difference, resampling their shared prompts
+together; separate rate intervals don't provide that.
 
 Some task families should be held out while I refine the rubric. If a pattern
 only appears on the prompts used to develop the detector, I need to know that
 before describing it as a broader model tendency.
 
-## The scoring path can change the result
+## Context and archived responses
 
 Main-CLI and phase2 LLM judges now see the saved user request alongside the
 completion, which is needed to assess whether advice was requested. The judge
@@ -95,17 +102,16 @@ in the model's answer out of the comparison. A completion-only judge is a useful
 baseline, but its lack of context is an expected disadvantage, not a finding
 about the model that generated the response.
 
-Current style runs preserve planned samples and generated responses through
-failures. Phase2 checks fingerprints and manifests before reusing work. Older
-artifacts are missing some of that information. Scenario checkpoints now verify
-formatted prompts, answer choices, reference answers, few-shot examples as
-rendered in the prompt, and robustness settings before reusing results. They
-also retain the planned instance set and report incomplete runs as failures.
-Changed or legacy checkpoints need a fresh output directory. A completed
-scenario instance is preserved on resume, but a failed robustness call still
-requires repeating that instance's baseline call. I'll keep the archived prompts, settings, and code
-revisions with each run rather than reconstruct old runs from current suite
-definitions. Remaining library issues are in
+The [architecture guide](ARCHITECTURE.md#persistence-and-scoring-boundaries)
+describes the resume checks and failure handling. Older artifacts can still lack
+system instructions or the original sample plan. The labeling page leaves that
+context missing and marks legacy source coverage as unverified. I can label
+visible rest advice without inventing those instructions, but I can't use those
+labels to judge compliance with an unknown condition.
+
+A failed robustness call still requires repeating that instance's baseline
+call. Completed scenario instances are preserved on resume. Library limits,
+including provider changes behind a model name, are described in
 [Compass's limitations](https://github.com/prathibha-github/compass/blob/main/docs/LIMITATIONS.md).
 
 ## What I want to learn from the next run
@@ -125,16 +131,18 @@ The rest-suggestion study is about understanding that behavior. The same
 infrastructure can support a separate study of safety guidance, with a suite
 that defines what is being measured and which comparisons matter.
 
-Scenario accuracy counts invalid answer formats as incorrect, with `prediction`
-set to null and `n_invalid` reported separately. Those responses remain in the
-accuracy denominator but are excluded from answer-confidence ECE. Checkpoints
-from earlier answer parsers require a fresh output directory.
+## Scenario confidence and benchmark variants
 
-Scenario confidence sums the observed token spellings of each answer label, then
-normalizes over those labels. It is conditional on the answer tokens returned
-by the API. Finding every label does not mean the top-k list contains every
-possible spelling, or the full vocabulary. ECE excludes responses missing any
-label. New checkpoints save the returned first-token candidates, answer choices,
-and confidence-scoring version for offline recomputation. Older checkpoints
-lack those candidates and cannot be corrected from their confidence alone;
-resuming them requires a fresh output directory.
+Invalid answer formats count as incorrect and are excluded from ECE, as
+described in the [output guide](README.md#outputs). Confidence sums the observed
+token spellings of each answer label, then normalizes over those labels. It is
+conditional on the answer tokens returned by the API. Finding every label does
+not mean the top-k list contains every spelling or the full vocabulary. ECE
+excludes responses missing any label, so its coverage matters alongside its value.
+
+New checkpoints save token candidates for offline recomputation. Older files
+without them cannot be corrected from their confidence value alone. The
+scenario loaders also use reduced or transformed datasets: four MMLU subjects,
+truncated BoolQ passages, and sampled TruthfulQA distractors. These scores need
+to be interpreted as results for those variants, rather than compared directly
+with published full-benchmark scores.
