@@ -96,8 +96,13 @@ about the model that generated the response.
 
 Current style runs preserve planned samples and generated responses through
 failures. Phase2 checks fingerprints and manifests before reusing work. Older
-artifacts are missing some of that information, and scenario checkpoints still
-use instance identities. I'll keep the archived prompts, settings, and code
+artifacts are missing some of that information. Scenario checkpoints now verify
+formatted prompts, answer choices, reference answers, few-shot examples as
+rendered in the prompt, and robustness settings before reusing results. They
+also retain the planned instance set and report incomplete runs as failures.
+Changed or legacy checkpoints need a fresh output directory. A completed
+scenario instance is preserved on resume, but a failed robustness call still
+requires repeating that instance's baseline call. I'll keep the archived prompts, settings, and code
 revisions with each run rather than reconstruct old runs from current suite
 definitions. Remaining library issues are in
 [Compass's limitations](https://github.com/prathibha-github/compass/blob/main/docs/LIMITATIONS.md).

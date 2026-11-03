@@ -33,15 +33,17 @@ def load_scenario_checkpoint(path: str, logger: logging.Logger) -> Dict[str, dic
     if not os.path.exists(path):
         return done
     with open(path) as f:
-        for line in f:
+        for line_number, line in enumerate(f, 1):
             line = line.strip()
             if not line:
                 continue
             try:
                 rec = json.loads(line)
+                if rec["id"] in done:
+                    raise ValueError(f"Duplicate scenario identity at {path}:{line_number}")
                 done[rec["id"]] = rec
-            except (json.JSONDecodeError, KeyError):
-                pass
+            except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                raise ValueError(f"Invalid scenario checkpoint at {path}:{line_number}") from exc
     if done:
         logger.info("    Resumed %d checkpointed instances from %s", len(done), path)
     return done

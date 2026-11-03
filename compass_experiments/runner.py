@@ -2,7 +2,7 @@ import json
 import logging
 import os
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple
 
@@ -195,6 +195,7 @@ class EvalRunner:
                     client, scenario, test_instances, few_shot,
                     run_robustness=self.config.run_robustness,
                     checkpoint_path=ckpt_path,
+                    model_name=model_name,
                 )
 
         if self.config.run_quirk_detection:
@@ -259,17 +260,65 @@ class EvalRunner:
         few_shot:         List[Instance],
         run_robustness:   bool,
         checkpoint_path:  str,
+        model_name: Optional[str] = None,
     ) -> ScenarioResults:
+        # Prepare the full request set before reading or appending a checkpoint.
+        # Formatting errors are configuration errors, not failed model responses.
+        if len({inst.id for inst in instances}) != len(instances):
+            raise ValueError("Scenario instance IDs must be unique")
+        requests = {}
+        contracts = {}
+        request_settings = {"max_tokens": 1, "logprobs": True, "top_logprobs": 20,
+                            "temperature": 0.0, "system": "You are a helpful assistant."}
+        perturbed_settings = {"max_tokens": 1, "logprobs": False,
+                              "temperature": 0.0, "system": "You are a helpful assistant."}
+        for inst in instances:
+            prompt = scenario.format_prompt(inst, few_shot)
+            p_prompt = None
+            if run_robustness:
+                p_inst = Instance(
+                    id=inst.id + "_pert",
+                    input=inject_typos(inst.input, p=0.05, seed=self.config.seed),
+                    choices=inst.choices, choice_texts=inst.choice_texts,
+                    correct=inst.correct, metadata=inst.metadata,
+                )
+                p_prompt = scenario.format_prompt(p_inst, few_shot)
+            requests[inst.id] = (prompt, p_prompt)
+            contracts[inst.id] = fingerprint({
+                "version": 1, "scenario": scenario.name,
+                "model": model_name or getattr(client, "model", self.config.models),
+                "client": f"{type(client).__module__}.{type(client).__qualname__}",
+                "instance": asdict(inst), "prompt": prompt, "perturbed_prompt": p_prompt,
+                "seed": self.config.seed, "run_robustness": run_robustness,
+                "request": request_settings,
+                "perturbed_request": perturbed_settings if run_robustness else None,
+            })
         done = self._load_checkpoint(checkpoint_path)
+        manifest_path = checkpoint_path + ".manifest.json"
+        if os.path.exists(manifest_path):
+            with open(manifest_path) as f:
+                previous = json.load(f)
+            if any(contracts.get(key) != value for key, value in previous.items()):
+                raise ValueError("Scenario checkpoint inputs changed; use a fresh output directory")
+        elif done:
+            raise ValueError("Scenario checkpoint inputs changed or lack a verified manifest; use a fresh output directory")
+        for key, record in done.items():
+            if key not in contracts or record.get("scenario_contract") != contracts[key]:
+                raise ValueError("Scenario checkpoint inputs changed or lack a verified contract; use a fresh output directory")
 
+        temporary = manifest_path + ".tmp"
+        with open(temporary, "w") as f:
+            json.dump(contracts, f, sort_keys=True)
+        os.replace(temporary, manifest_path)
+        failures = 0
         with open(checkpoint_path, "a") as ckpt_f:
             for inst in tqdm(instances, desc=scenario.name, leave=False):
                 if inst.id in done:
                     continue
 
                 try:
-                    prompt = scenario.format_prompt(inst, few_shot)
-                    resp   = client.complete(prompt, max_tokens=1, logprobs=True, top_logprobs=20)
+                    prompt, p_prompt = requests[inst.id]
+                    resp   = client.complete(prompt, **request_settings)
                     pred   = extract_mc_answer(resp.completion, inst.choices)
                     probs, coverage = extract_choice_probs(resp.logprobs, inst.choices)
                     conf   = probs.get(pred, 1.0 / len(inst.choices))
@@ -277,22 +326,13 @@ class EvalRunner:
 
                     p_ok: Optional[bool] = None
                     if run_robustness:
-                        p_input  = inject_typos(inst.input, p=0.05, seed=self.config.seed)
-                        p_inst   = Instance(
-                            id=inst.id + "_pert",
-                            input=p_input,
-                            choices=inst.choices,
-                            choice_texts=inst.choice_texts,
-                            correct=inst.correct,
-                            metadata=inst.metadata,
-                        )
-                        p_prompt = scenario.format_prompt(p_inst, few_shot)
-                        p_resp   = client.complete(p_prompt, max_tokens=1, logprobs=False)
+                        p_resp   = client.complete(p_prompt, **perturbed_settings)
                         p_pred   = extract_mc_answer(p_resp.completion, inst.choices)
                         p_ok     = p_pred == inst.correct
 
                     record: dict = {
                         "id":                    inst.id,
+                        "scenario_contract":     contracts[inst.id],
                         "created_at":            datetime.now(timezone.utc).isoformat(),
                         "prompt":                prompt,
                         "completion":            resp.completion,
@@ -311,8 +351,11 @@ class EvalRunner:
                     ckpt_f.flush()
 
                 except Exception as exc:
-                    logger.error("  Instance %s failed: %s — skipping", inst.id, exc)
+                    failures += 1
+                    logger.error("  Instance %s failed: %s", inst.id, exc)
 
+        if failures:
+            raise RuntimeError(f"{failures} scenario instances failed; resume to retry missing results")
         return self._aggregate(scenario.name, list(done.values()), len(instances), checkpoint_path)
 
     @staticmethod
