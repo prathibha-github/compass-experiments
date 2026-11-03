@@ -5,7 +5,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from calibrate_detectors import export_tasks, report_labels
+from calibrate_detectors import export_tasks as _export_tasks, report_labels
+
+def export_tasks(*args, **kwargs):
+    return _export_tasks(*args, annotation_target="unsolicited rest suggestion",
+                         instructions="Label true if the response suggests rest without being asked.",
+                         instruction_version="1", **kwargs)
 from compass.detectors import StyleCondition, StylePrompt, TicSuite, RegexDetector
 from compass.evaluation.suite_runner import generate_suite_completions, evaluate_suite_completions
 
@@ -47,3 +52,23 @@ class CalibrationTests(unittest.TestCase):
         gen.write_text(json.dumps(row) + "\n")
         with self.assertRaisesRegex(ValueError, "does not match"):
             export_tasks(gen, evaluations, "rest")
+
+    def test_label_task_and_instruction_provenance(self):
+        import copy
+        generations, evaluations = artifacts(self.path)
+        tasks, keys = export_tasks(generations, evaluations, "rest")
+        self.assertEqual(keys[0]["prompt_id"], "p")
+        self.assertEqual(keys[0]["sample_idx"], 0)
+        self.assertEqual(keys[0]["suite"], "x")
+        tasks[0]["human_hit"] = True
+        tasks[0]["notes"] = "The response suggests a break."
+        report = report_labels(keys, tasks, annotator="reviewer-a")
+        self.assertEqual(report["annotator"], "reviewer-a")
+        for field in ["completion", "prompt", "instructions", "annotation_target", "instruction_version"]:
+            changed = copy.deepcopy(tasks)
+            changed[0][field] = "changed"
+            with self.assertRaisesRegex(ValueError, "changed"):
+                report_labels(keys, changed)
+        new_tasks, _ = _export_tasks(generations, evaluations, "rest", annotation_target="any rest mention",
+                                      instructions="Label any mention of rest.", instruction_version="2")
+        self.assertNotEqual(tasks[0]["id"], new_tasks[0]["id"])

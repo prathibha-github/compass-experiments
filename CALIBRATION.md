@@ -44,6 +44,9 @@ python calibrate_detectors.py export \
   --generations results/pilot/rest_cai_validation/suite_generations.jsonl \
   --evaluations results/pilot/rest_cai_validation/suite_evaluations_gpt-4o-mini.jsonl \
   --detector rest_suggestion \
+  --target "unsolicited rest suggestion" \
+  --instructions rest_annotation_instructions.txt \
+  --instruction-version 1 \
   --output-dir results/rest_labels
 ```
 
@@ -51,16 +54,26 @@ This suite contains both heuristic and LLM detectors, so phase2 saves all its
 detector rows in the judge-tagged file. The example uses the default judge,
 `gpt-4o-mini`; substitute the filename for the judge used in your saved run.
 
+Write the labeling rule and edge cases in `rest_annotation_instructions.txt`
+before export. Every task includes these instructions and their version. The
+private key retains prompt and sample IDs, task type, and generation and scoring
+fingerprints. A different target or instruction version produces different item
+IDs, so labels for one question cannot silently become labels for another.
+
 Give each annotator a separate copy of `labels.jsonl`; retain
 `private_key.jsonl` for analysis only. Change `human_hit` to JSON `true` or
 `false`, keeping the ID and context intact. Leave it `null` for unresolved
 items and explain why in `notes`. The tool refuses to overwrite an existing
-export directory so completed labels are not lost.
+export directory so completed labels are not lost. Reporting also rejects
+changes to the response, context, target, or instructions. Run it separately
+for each annotator before creating a separate adjudicated file; reporting does
+not modify any label file.
 
 ```bash
 python calibrate_detectors.py report \
   --key results/rest_labels/private_key.jsonl \
-  --labels results/rest_labels/adjudicated.jsonl
+  --labels results/rest_labels/adjudicated.jsonl \
+  --annotator adjudication-v1
 ```
 
 The report shows coverage, a confusion matrix, agreement, precision, and recall
