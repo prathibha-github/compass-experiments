@@ -22,6 +22,7 @@ from compass_experiments.metrics.linkedin_style import (
 )
 from compass_experiments.metrics.robustness import inject_typos
 from compass.evaluation.contracts import detector_definition, fingerprint, validate_suite_identities
+from compass.judges.context import PROMPT_VERSION as JUDGE_PROMPT_VERSION
 from compass.judges.parsing import SCORING_VERSION
 
 from compass_experiments.metrics.tic_suite import (
@@ -460,6 +461,8 @@ class EvalRunner:
             "judge_model": self.config.judge_model,
             "judge_model_secondary": self.config.judge_model_secondary,
             "judge_system_prompt": LLM_JUDGE_SYSTEM_PROMPT,
+            "judge_context_mode": "user",
+            "judge_prompt_version": JUDGE_PROMPT_VERSION,
             "scoring_version": SCORING_VERSION,
         })
         generations_path = ckpt_path + ".generations.jsonl"
@@ -480,7 +483,7 @@ class EvalRunner:
                             )
                         if artifact == generations_path:
                             key = (row["condition"], row["prompt_idx"], row["sample_idx"])
-                            saved_generations[key] = row["completion"]
+                            saved_generations[key] = row
                         elif artifact == requests_path:
                             requested_samples.add((row["condition"], row["prompt_idx"], row["sample_idx"]))
 
@@ -583,7 +586,8 @@ class EvalRunner:
 
                         try:
                             if key in saved_generations:
-                                completion = saved_generations[key]
+                                generation = saved_generations[key]
+                                completion = generation["completion"]
                             else:
                                 resp = client.complete(
                                     prompt.text,
@@ -592,18 +596,20 @@ class EvalRunner:
                                     system=condition.system_prompt,
                                 )
                                 completion = resp.completion
-                                gen_f.write(json.dumps({
+                                generation = {
                                     "run_contract": run_contract, "condition": condition.name,
                                     "prompt_idx": prompt_idx, "sample_idx": sample_idx,
                                     "prompt": prompt.text, "system_prompt": condition.system_prompt,
                                     "completion": completion,
-                                }) + "\n")
+                                }
+                                gen_f.write(json.dumps(generation) + "\n")
                                 gen_f.flush()
-                                saved_generations[key] = completion
+                                saved_generations[key] = generation
                             detector_results = analyze_text(
                                 completion,
                                 suite,
                                 judge_fn=judge_fn,
+                                context=generation["prompt"],
                             )
                             secondary_results = None
                             if judge_fn_secondary is not None:
@@ -611,6 +617,7 @@ class EvalRunner:
                                     completion,
                                     suite,
                                     judge_fn=judge_fn_secondary,
+                                    context=generation["prompt"],
                                 )
                                 self._annotate_secondary_judge_metadata(
                                     detector_results=detector_results,

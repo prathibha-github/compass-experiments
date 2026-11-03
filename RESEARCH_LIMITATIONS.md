@@ -84,10 +84,11 @@ before describing it as a broader model tendency.
 
 ## The scoring path can change the result
 
-Main-CLI LLM judges see the completion. Phase2 also gives them the original user
-request, which is needed to assess whether advice was requested. I'll use
-phase2 for that part of the study and document exactly what context was shown.
-It doesn't automatically include every part of the generation context.
+Main-CLI and phase2 LLM judges now see the saved user request alongside the
+completion, which is needed to assess whether advice was requested. The judge
+metadata records that context. Generation system instructions are omitted by
+default; including a condition could reveal it to the judge. I'll document the
+context used in each comparison.
 
 I can compare scoring methods on the same saved responses. That keeps changes
 in the model's answer out of the comparison. A completion-only judge is a useful

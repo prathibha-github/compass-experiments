@@ -64,3 +64,44 @@ class StyleIntegrityTests(unittest.TestCase):
                     runner._run_tic_suite(subject, "model", suite, samples=1)
             self.assertEqual(subject.calls, 1)
             self.assertEqual(judge.calls, 1)
+
+    def test_primary_and_secondary_judges_receive_saved_request_on_retry(self):
+        class RecordingJudge(Client):
+            def __init__(self, fail=False):
+                super().__init__(judge=True, fail=fail)
+                self.prompts = []
+
+            def complete(self, prompt, **kwargs):
+                self.prompts.append(prompt)
+                return super().complete(prompt, **kwargs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            subject = Client()
+            primary, secondary = RecordingJudge(fail=True), RecordingJudge()
+            config = EvalConfig(api_key='dummy', output_dir=directory,
+                                judge_model='primary', judge_model_secondary='secondary')
+            runner = EvalRunner(config)
+            def factory(config, model):
+                return primary if model == 'primary' else secondary
+            with patch('compass_experiments.runner.create_client', side_effect=factory):
+                with self.assertRaises(RuntimeError):
+                    runner._run_tic_suite(subject, 'model', self.suite(), samples=1)
+                result = runner._run_tic_suite(subject, 'model', self.suite(), samples=1)
+            self.assertEqual(subject.calls, 1)
+            for prompt in primary.prompts + secondary.prompts:
+                self.assertIn('User request:\nHelp', prompt)
+                self.assertNotIn('Generation system instructions:', prompt)
+            row = json.loads(Path(result['checkpoint_path']).read_text())
+            self.assertEqual(row['detectors']['d']['metadata']['judge_context']['user_request'], 'Help')
+
+    def test_changed_shared_judge_prompt_version_rejects_resume(self):
+        with tempfile.TemporaryDirectory() as directory:
+            subject, judge = Client(), Client(judge=True)
+            runner = EvalRunner(EvalConfig(api_key='dummy', output_dir=directory, judge_model='judge'))
+            with patch('compass_experiments.runner.create_client', return_value=judge):
+                runner._run_tic_suite(subject, 'model', self.suite(), samples=1)
+                with patch('compass_experiments.runner.JUDGE_PROMPT_VERSION', 'next-version'):
+                    with self.assertRaisesRegex(ValueError, 'inputs changed'):
+                        runner._run_tic_suite(subject, 'model', self.suite(), samples=1)
+            self.assertEqual(subject.calls, 1)
+            self.assertEqual(judge.calls, 1)
