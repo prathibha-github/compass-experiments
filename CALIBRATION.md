@@ -32,9 +32,13 @@ as a substitute for human calibration.
 
 ## Export and compare saved phase2 results
 
-The offline helper exports every scored example for one detector, with the
-full completion from the generation artifact. It rejects missing scores and
-generation/evaluation mismatches. Re-score legacy generations with the current
+The offline helper exports every planned example for one detector, with the
+full completion from the generation artifact. It checks the generation manifest
+and the selected detector’s evaluation manifest before writing an export.
+Missing samples, duplicate manifest entries, stale scoring contracts, and missing
+modern manifests are errors. Trimming both result files does not turn a partial
+run into a complete label set. An incomplete unrelated detector does not block
+export of a fully scored detector. Re-score legacy generations with the current
 Compass suite API first; historical files remain unchanged. Supply missing
 system context from the archived run before labeling, or mark those items
 undecidable. Never infer historical context from today's suite definition.
@@ -79,6 +83,12 @@ python calibrate_detectors.py report \
 The report shows coverage, a confusion matrix, agreement, precision, and recall
 overall and by model/condition. Unknown and duplicate IDs are errors. Unlabeled
 items are excluded and reported explicitly; zero denominators produce `null`.
+The private key records the full exported item set; a truncated key is rejected.
+`label_status` describes how many exported items were labeled. Reports from
+legacy generations or older exports without population metadata have
+`source_coverage_verified=false` and status `source_coverage_unverified`, even
+when all supplied items are labeled. Re-export complete modern artifacts to
+verify source coverage.
 The agreement Wilson interval treats labeled items as independent. For repeated
 generations of shared prompts, use prompt-level resampling for inferential
 comparisons, and publish prompt counts alongside response counts.
