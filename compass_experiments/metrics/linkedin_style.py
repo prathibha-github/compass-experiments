@@ -5,6 +5,7 @@ This module defines the LinkedIn suite using the generic tic/style primitives,
 while preserving the original helper functions and result shape.
 """
 from typing import Dict, List
+from compass.detectors import compute_absolute_change
 
 from compass_experiments.metrics.tic_suite import (
     EmojiDetector,
@@ -160,8 +161,12 @@ def compute_uplift(
         condition_results, "linkedin_phrases", metric="mean_count", baseline=baseline
     )
 
+    emoji_change = compute_absolute_change(condition_results, "emoji", "pct_hit", baseline)
+    phrase_change = compute_absolute_change(condition_results, "linkedin_phrases", "mean_count", baseline)
     return {
         condition: {
+            "emoji_change_pp": emoji_change[condition],
+            "phrase_mean_change": phrase_change[condition],
             "emoji_uplift_pct": emoji_uplift.get(condition, 0),
             "phrase_uplift_pct": phrase_uplift.get(condition, 0),
         }

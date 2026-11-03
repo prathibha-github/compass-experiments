@@ -424,7 +424,7 @@ class RunnerCoreTests(unittest.TestCase):
                     "sample_idx": 0,
                     "prompt": "Write a short note.",
                     "completion": "old p0 s0",
-                    "detectors": {},
+                    "detectors": {"emoji": {"hit": False, "count": 0}},
                 },
                 {
                     "schema_version": 1,
@@ -437,7 +437,7 @@ class RunnerCoreTests(unittest.TestCase):
                     "sample_idx": 2,
                     "prompt": "Write a short note.",
                     "completion": "old p0 s2",
-                    "detectors": {},
+                    "detectors": {"emoji": {"hit": False, "count": 0}},
                 },
                 {
                     "schema_version": 1,
@@ -450,7 +450,7 @@ class RunnerCoreTests(unittest.TestCase):
                     "sample_idx": 0,
                     "prompt": "Write an update.",
                     "completion": "old p1 s0",
-                    "detectors": {},
+                    "detectors": {"emoji": {"hit": False, "count": 0}},
                 },
                 {
                     "schema_version": 1,
@@ -463,7 +463,7 @@ class RunnerCoreTests(unittest.TestCase):
                     "sample_idx": 2,
                     "prompt": "Write an update.",
                     "completion": "old p1 s2",
-                    "detectors": {},
+                    "detectors": {"emoji": {"hit": False, "count": 0}},
                 },
             ]
             runner._run_tic_suite(client, "subject-model", suite, samples=1)

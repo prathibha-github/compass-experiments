@@ -17,6 +17,24 @@ def _ci_text(stats: dict, prefix: str = "pct_hit") -> str:
     return f"[{low:.1f},{high:.1f}]"
 
 
+def _prompt_text(stats):
+    summary = stats.get("prompt_statistics", {}).get("all")
+    if summary is None:
+        return "prompts=unknown prompt-ci=N/A"
+    interval = summary["interval"]
+    ci = f"[{100*interval[0]:.1f},{100*interval[1]:.1f}]" if interval else "N/A"
+    return f"prompts={summary['distinct_prompts']} prompt-ci={ci}"
+
+
+def _prompt_uncertain(row):
+    summary = row.get("prompt_statistics", {}).get("all")
+    if summary is None or summary["distinct_prompts"] < 20 or summary["interval"] is None:
+        return True
+    low, high = summary["interval"]
+    # A degenerate bootstrap is not evidence that unseen prompts have no risk.
+    return high - low >= .4 or low == high
+
+
 def _sample_flag(stats: dict) -> str:
     return " low-n" if stats.get("low_sample") else ""
 
@@ -101,7 +119,8 @@ def _append_tic_suite_sections(lines: List[str], results_by_model: Dict[str, Eva
                     lines.append(
                         f"    {detector_name:<18}  "
                         f"hit%={detector_stats['pct_hit']:>5.1f}  "
-                        f"ci={_ci_text(detector_stats):<13}  "
+                        f"response-ci={_ci_text(detector_stats):<13}  "
+                        f"{_prompt_text(detector_stats)}  "
                         f"mean={detector_stats['mean_count']:>4.2f}"
                     )
             checkpoint_path = suite_results.get("checkpoint_path")
@@ -166,7 +185,8 @@ def _append_tic_suite_sections(lines: List[str], results_by_model: Dict[str, Eva
                             f"{_sample_flag(stats)}  "
                             f"top={detector_name:<18}  "
                             f"hit%={detector_stats['pct_hit']:>5.1f}  "
-                            f"ci={_ci_text(detector_stats):<13}"
+                            f"response-ci={_ci_text(detector_stats):<13} "
+                            f"{_prompt_text(detector_stats)}"
                         )
 
 
@@ -414,7 +434,8 @@ def _append_linkedin_style_sections(lines: List[str], results_by_model: Dict[str
             lines.append(
                 f"  {cond:<20}  n={stats['n_outputs']:>3}  "
                 f"any%={stats['pct_with_emoji']:>5.1f}  "
-                f"ci={_ci_text(stats, 'pct_with_emoji'):<13}  "
+                f"response-ci={_ci_text(stats, 'pct_with_emoji'):<13}  "
+                f"{_prompt_text(stats.get('detectors', {}).get('emoji', {}))}  "
                 f"excessive%={stats['pct_excessive_emoji']:>5.1f}  "
                 f"mean_emoji={stats['mean_emoji_count']:>4.2f}  "
                 f"phrases={stats['mean_phrase_hits']:>4.2f}"
@@ -511,6 +532,7 @@ def _iter_detector_rows(results_by_model: Dict[str, EvalResults]) -> List[Dict[s
                             "low_sample": _is_low_sample(stats, det_stats),
                             "pct_hit": float(det_stats.get("pct_hit", 0.0)),
                             "mean_count": float(det_stats.get("mean_count", 0.0)),
+                            "prompt_statistics": det_stats.get("prompt_statistics", {}),
                             "ci_low": det_stats.get("pct_hit_ci_low"),
                             "ci_high": det_stats.get("pct_hit_ci_high"),
                         }
@@ -531,7 +553,8 @@ def _iter_detector_rows(results_by_model: Dict[str, EvalResults]) -> List[Dict[s
                                 "low_sample": _is_low_sample(stats, det_stats),
                                 "pct_hit": float(det_stats.get("pct_hit", 0.0)),
                                 "mean_count": float(det_stats.get("mean_count", 0.0)),
-                                "ci_low": det_stats.get("pct_hit_ci_low"),
+                                "prompt_statistics": det_stats.get("prompt_statistics", {}),
+                            "ci_low": det_stats.get("pct_hit_ci_low"),
                                 "ci_high": det_stats.get("pct_hit_ci_high"),
                             }
                         )
@@ -644,10 +667,10 @@ def _safety_recommendations(
         recs.append("No configured threshold crossings detected in this run.")
     if uncertain_rows:
         recs.append(
-            f"{len(uncertain_rows)} uncertain slices flagged (low sample or wide CI); increase sample counts and rerun."
+            f"{len(uncertain_rows)} uncertain slices flagged; inspect distinct prompt coverage and interval limits before expanding the sample."
         )
     else:
-        recs.append("No uncertainty flags triggered under current low-n/CI heuristics.")
+        recs.append("No uncertainty flags triggered under current prompt-coverage/CI heuristics.")
     recs.append("Re-run across multiple dates and model versions before drawing deployment conclusions.")
     return recs
 
@@ -659,7 +682,7 @@ def save_safety_case(
     deep_dive_top_k: int = 0,
 ) -> str:
     """
-    Generate a markdown safety-case report for tic-suite outputs.
+    Generate a markdown behavioral evaluation report for tic-suite outputs.
 
     The report includes threshold crossings (from thresholds YAML), uncertainty
     flags, deep-dive candidates, and recommendations. Returns the path to the
@@ -675,7 +698,7 @@ def save_safety_case(
     thresholds = _load_thresholds(thresholds_path)
     rows = _iter_detector_rows(results_by_model)
     crossings = _find_threshold_crossings(rows, thresholds)
-    uncertain_rows = [row for row in rows if row.get("low_sample") or _ci_width(row) >= 40.0]
+    uncertain_rows = [row for row in rows if row.get("low_sample") or _prompt_uncertain(row)]
     deep_dive = _deep_dive_rows(rows, crossings, deep_dive_top_k)
     recommendations = _safety_recommendations(crossings, uncertain_rows)
 
@@ -689,7 +712,10 @@ def save_safety_case(
     )
 
     lines = [
-        "# Safety Case Report",
+        "# Behavioral Evaluation Report",
+        "",
+        "Configured thresholds are screening rules, not evidence of deployment safety.",
+        "Response-level Wilson intervals assume independent observations. Prompt-cluster intervals describe variation across the observed prompts; they do not establish coverage of unseen tasks.",
         "",
         f"- Generated: {datetime.now():%Y-%m-%d %H:%M:%S}",
         f"- Models: {models}",
@@ -714,7 +740,10 @@ def save_safety_case(
 
     lines += ["", "## Uncertainty Flags", ""]
     lines.append(f"- Flagged slices: {len(uncertain_rows)}")
-    lines.append("- Rule: low-n marker OR hit-rate CI width >= 40 percentage points.")
+    lines.append("- Rule: low response count, fewer than 20 distinct prompts, unknown prompt coverage, or an unavailable, degenerate, or wide prompt interval (>=40 percentage points). The count threshold is a screening heuristic.")
+
+    for row in uncertain_rows:
+        lines.append(f"- {row['model']} / {row['suite']} / {row['condition']} / {row['detector']} / {row['task_type'] or 'all tasks'}: {_prompt_text(row)}; responses={row['n_outputs']}")
 
     if deep_dive_top_k > 0:
         lines += ["", f"## Deep Dive Candidates (Top {deep_dive_top_k})", ""]
