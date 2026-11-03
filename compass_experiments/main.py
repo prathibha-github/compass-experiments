@@ -52,7 +52,7 @@ python -m compass_experiments.main --api-key sk-... --anthropic-api-key sk-ant-.
   --judge-model-secondary claude-haiku-4-5-20251001 \
   --judge-disagreement-threshold 0.4 --models claude-sonnet-4-6
 
-# Emit a safety-case markdown report with deep-dive candidates
+# Emit a behavioral evaluation markdown report with deep-dive candidates
 python -m compass_experiments.main --style-only --style-suite all \
   --deep-dive-top-k 10 --safety-thresholds configs/thresholds.yaml
 """
@@ -224,13 +224,13 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument(
         "--safety-thresholds",
         default="configs/thresholds.yaml",
-        help="Path to YAML threshold config used for safety-case report generation",
+        help="Path to YAML threshold config used for behavioral evaluation report generation",
     )
     parser.add_argument(
         "--deep-dive-top-k",
         type=int,
         default=0,
-        help="Number of high-risk/uncertain detector slices to include in safety-case deep dive",
+        help="Number of threshold-crossing or uncertain detector slices to include in behavioral evaluation deep dive",
     )
     parser.add_argument("--seed",             type=int,   default=42)
     parser.add_argument("--request-interval", type=float, default=2.0,
@@ -395,7 +395,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     print(f"\nFull JSON : {json_path}")
     print(f"Summary   : {txt_path}")
     if safety_path:
-        print(f"Safety Case: {safety_path}")
+        print(f"Behavioral report: {safety_path}")
     if any(sr.status != "complete" for result in results.values()
            for sr in result.scenario_results.values()):
         raise SystemExit("Requested scenarios are incomplete; see saved reports for details.")

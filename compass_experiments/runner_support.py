@@ -332,3 +332,18 @@ def load_tic_checkpoint(
     if skipped:
         logger.warning("    Skipped %d incompatible %s checkpoint records", skipped, suite.name)
     return done, condition_outputs
+
+
+def attach_prompt_statistics(analysis, records):
+    """Add Compass prompt-cluster statistics to each condition/detector cell."""
+    from compass.evaluation.statistics import prompt_rate_summary
+    for condition, stats in analysis.items():
+        rows = [row for row in records if row["condition"] == condition]
+        stats["distinct_prompts"] = len({row["prompt_id"] for row in rows})
+        for detector, values in stats.get("detectors", {}).items():
+            observations = [dict(prompt_id=row["prompt_id"], sample_idx=row["sample_idx"],
+                                 hit=row["detectors"][detector]["hit"],
+                                 generation_quality_flagged=row.get("generation_quality_flagged"))
+                            for row in rows]
+            values["prompt_statistics"] = prompt_rate_summary(observations)
+    return analysis

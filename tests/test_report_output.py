@@ -212,7 +212,7 @@ class ReportOutputTests(unittest.TestCase):
                 text = f.read()
 
         self.assertTrue(path.endswith(".md"))
-        self.assertIn("Safety Case Report", text)
+        self.assertIn("Behavioral Evaluation Report", text)
         self.assertIn("Threshold Crossings", text)
         self.assertIn("sycophancy", text)
         self.assertIn("Deep Dive Candidates", text)

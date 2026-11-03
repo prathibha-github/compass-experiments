@@ -216,7 +216,7 @@ class TicSuiteAggregationTests(unittest.TestCase):
         self.assertEqual(compute_uplift({}, "emoji"), {})
         self.assertEqual(
             compute_uplift(condition_results, "emoji", baseline="missing"),
-            {"neutral": 0, "persona": 100},
+            {"neutral": None, "persona": None},
         )
         self.assertEqual(
             compute_uplift(condition_results, "jargon", baseline="neutral"),
@@ -224,7 +224,7 @@ class TicSuiteAggregationTests(unittest.TestCase):
         )
         self.assertEqual(
             compute_uplift(condition_results, "missing_detector", baseline="neutral"),
-            {"neutral": 0, "persona": 0},
+            {"neutral": None, "persona": None},
         )
 
 

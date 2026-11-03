@@ -42,6 +42,7 @@ from compass_experiments.runner_support import (
     TIC_CHECKPOINT_SCHEMA_VERSION,
     ScenarioResults,
     aggregate_scenario_results,
+    attach_prompt_statistics,
     extract_judge_disagreements,
     load_scenario_checkpoint,
     load_tic_checkpoint,
@@ -262,6 +263,12 @@ class EvalRunner:
             for k, v in safety_client.total_tokens.items():
                 tokens[k] = tokens.get(k, 0) + v
             cost += safety_client.total_cost_usd
+        for suite_result in result.tic_results.values():
+            for role in ("judge", "judge_secondary"):
+                usage = suite_result.get(role, {})
+                cost += usage.get("cost_usd", 0.0)
+                for key, value in usage.get("token_usage", {}).items():
+                    tokens[key] = tokens.get(key, 0) + value
         result.token_usage    = tokens
         result.total_cost_usd = cost
         return result
@@ -558,6 +565,7 @@ class EvalRunner:
                     return resp.completion
 
         done, resumed_outputs = self._load_tic_checkpoint(ckpt_path, suite)
+        scored_records = list(done.values())
         for condition, outputs in resumed_outputs.items():
             condition_outputs[condition].extend(outputs)
         for rec in done.values():
@@ -691,6 +699,7 @@ class EvalRunner:
                             if self.config.run_tag:
                                 record["run_tag"] = self.config.run_tag
                             record.update(suite.extra_record_fields(completion, detector_results))
+                            scored_records.append(record)
                             ckpt_f.write(json.dumps(record) + "\n")
                             ckpt_f.flush()
                             condition_outputs[condition.name].append(completion)
@@ -722,6 +731,7 @@ class EvalRunner:
             analysis = summarize_detector_records(condition_detector_records, suite)
         else:
             analysis = summarize_outputs(condition_outputs, suite)
+        attach_prompt_statistics(analysis, scored_records)
         uplift = (
             uplift_fn(analysis, suite.baseline_condition)
             if uplift_fn
@@ -743,6 +753,9 @@ class EvalRunner:
             },
             "checkpoint_path": ckpt_path,
         }
+        for task_type, task_analysis in result["task_segments"].items():
+            attach_prompt_statistics(task_analysis, [row for row in scored_records
+                if self._record_task_type(row, suite) == task_type])
         if judge_client and self.config.judge_model:
             result["judge"] = {
                 "model": self.config.judge_model,
