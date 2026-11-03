@@ -4,7 +4,8 @@ import argparse
 import json
 from pathlib import Path
 
-from compass.evaluation.contracts import fingerprint
+from compass.evaluation.contracts import fingerprint, manifest_contracts
+from compass.evaluation.record_schema import checkpoint_identity
 from compass.evaluation.suite_io import load_suite_generations
 from compass.judges.calibration import compare_human_labels
 
@@ -22,12 +23,42 @@ def index_rows(rows):
     return indexed
 
 
+def source_population(generations_path, evaluations_path, generations, detector):
+    generation_manifest = Path(generations_path).with_suffix(".manifest.json")
+    generation_verified = generation_manifest.exists()
+    if generation_verified:
+        expected = manifest_contracts(json.loads(generation_manifest.read_text()))
+        if any(len(identity) != 5 for identity in expected):
+            raise ValueError("Invalid generation manifest identity")
+        if set(generations) != set(expected) or any(
+            row.get("generation_contract") != expected[identity]
+            for identity, row in generations.items()
+        ):
+            raise ValueError("Incomplete or incompatible generations; restore or resume the original run before export")
+    elif any("generation_contract" in row for row in generations.values()):
+        raise ValueError("Modern generation manifest is missing; restore it before export")
+
+    evaluation_manifest = Path(evaluations_path).with_suffix(".manifest.json")
+    if not evaluation_manifest.exists():
+        raise ValueError("Evaluation manifest is missing; restore it or re-score before export")
+    manifest = json.loads(evaluation_manifest.read_text())
+    expected = manifest_contracts(manifest)
+    if any(len(identity) != 6 for identity in expected):
+        raise ValueError("Invalid evaluation manifest identity")
+    selected = {identity: contract for identity, contract in expected.items() if identity[2] == detector}
+    planned_generations = {identity[:2] + identity[3:] for identity in selected}
+    if planned_generations != set(generations):
+        raise ValueError("Detector evaluation plan does not match the generation population")
+    return selected, generation_verified and manifest.get("generation_coverage_verified") is True
+
+
 def export_tasks(generations_path, evaluations_path, detector, *, annotation_target, instructions, instruction_version):
     if not all(isinstance(value, str) and value.strip() for value in (annotation_target, instructions, instruction_version)):
         raise ValueError("Annotation target, instructions, and instruction version are required")
     annotation = {"annotation_target": annotation_target, "instructions": instructions,
                   "instruction_version": instruction_version}
     generations = load_suite_generations(Path(generations_path), strict=True)
+    expected, source_verified = source_population(generations_path, evaluations_path, generations, detector)
     tasks, keys = [], []
     seen = set()
     for row in read_rows(evaluations_path):
@@ -37,6 +68,9 @@ def export_tasks(generations_path, evaluations_path, detector, *, annotation_tar
         if identity in seen:
             raise ValueError(f"Duplicate evaluation: {identity}")
         seen.add(identity)
+        evaluation_id = checkpoint_identity(row)
+        if evaluation_id not in expected or row.get("evaluation_contract") != expected[evaluation_id]:
+            raise ValueError("Unexpected or stale detector evaluation; restore or re-score before export")
         gen = generations[identity]
         if type(row["hit"]) is not bool:
             raise ValueError("Detector hit must be a boolean")
@@ -61,6 +95,10 @@ def export_tasks(generations_path, evaluations_path, detector, *, annotation_tar
         raise ValueError("No matching scored examples")
     if len(seen) != len(generations):
         raise ValueError("Detector evaluations are incomplete; retry scoring before calibration")
+    population = {"count": len(keys), "ids_hash": fingerprint(sorted(row["id"] for row in keys)),
+                  "source_coverage_verified": source_verified}
+    for row in keys:
+        row["export_population"] = population
     # Mix model/condition blocks without exposing predictions or model names.
     return sorted(tasks, key=lambda row: row["id"]), keys
 
@@ -74,12 +112,25 @@ def task_fingerprint(task):
 
 def report_labels(keys, labels, *, annotator=None):
     predictions, humans = index_rows(keys), index_rows(labels)
+    populations = [row.get("export_population") for row in keys]
+    source_verified = False
+    if any(population is not None for population in populations):
+        population = populations[0]
+        if (not isinstance(population, dict) or any(item != population for item in populations)
+                or population.get("count") != len(keys)
+                or population.get("ids_hash") != fingerprint(sorted(predictions))):
+            raise ValueError("Private key population is incomplete or inconsistent; use the original export")
+        source_verified = population.get("source_coverage_verified") is True
     for key, row in humans.items():
         if key not in predictions or task_fingerprint(row) != predictions[key].get("task_fingerprint"):
             raise ValueError("Label task or instructions changed; use the original export")
     expected = {key: row["predicted_hit"] for key, row in predictions.items()}
     actual = {key: row["human_hit"] for key, row in humans.items()}
     report = compare_human_labels(expected, actual)
+    report["label_status"] = report["status"]
+    report["source_coverage_verified"] = source_verified
+    if not source_verified:
+        report["status"] = "source_coverage_unverified"
     report["annotator"] = annotator
     report["labels_fingerprint"] = fingerprint(labels)
     report["key_fingerprint"] = fingerprint(keys)
