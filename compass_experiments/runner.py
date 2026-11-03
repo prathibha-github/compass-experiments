@@ -21,6 +21,7 @@ from compass_experiments.metrics.linkedin_style import (
     compute_uplift,
 )
 from compass_experiments.metrics.robustness import inject_typos
+from compass.clients.settings import client_request_settings
 from compass.evaluation.contracts import detector_definition, fingerprint, validate_suite_identities
 from compass.judges.context import PROMPT_VERSION as JUDGE_PROMPT_VERSION
 from compass.judges.parsing import SCORING_VERSION
@@ -34,7 +35,7 @@ from compass_experiments.metrics.tic_suite import (
     summarize_detector_records,
     summarize_outputs,
 )
-from compass_experiments.models import CompletionClient, create_client
+from compass_experiments.models import CompletionClient, create_client, provider_request_settings
 from compass_experiments.runner_support import (
     TIC_CHECKPOINT_SCHEMA_VERSION,
     ScenarioResults,
@@ -292,6 +293,7 @@ class EvalRunner:
                 "instance": asdict(inst), "prompt": prompt, "perturbed_prompt": p_prompt,
                 "seed": self.config.seed, "run_robustness": run_robustness,
                 "request": request_settings,
+                "provider_settings": client_request_settings(client, 1, 0.0),
                 "perturbed_request": perturbed_settings if run_robustness else None,
             })
         done = self._load_checkpoint(checkpoint_path)
@@ -342,6 +344,8 @@ class EvalRunner:
                         "created_at":            datetime.now(timezone.utc).isoformat(),
                         "prompt":                prompt,
                         "completion":            resp.completion,
+                        "request_settings":      getattr(resp, "request_settings", {}),
+                        "perturbed_request_settings": getattr(p_resp, "request_settings", {}) if run_robustness else None,
                         "prediction":            pred,
                         "answer_valid":          pred is not None,
                         "correct":               inst.correct,
@@ -465,6 +469,8 @@ class EvalRunner:
             "prompts": [vars(p) for p in suite.prompts],
             "conditions": [vars(c) for c in suite.conditions],
             "max_tokens": suite.max_tokens, "requested_temperature": 0.0,
+            "provider_settings": client_request_settings(client, suite.max_tokens, 0.0),
+            "judge_provider_settings": {name: [provider_request_settings(name, getattr(d, "max_tokens", 180), 0.0) for d in suite.detectors if hasattr(d, "detect_with_judge")] for name in (self.config.judge_model, self.config.judge_model_secondary) if name},
             "detectors": [detector_definition(d) for d in suite.detectors],
             "judge_model": self.config.judge_model,
             "judge_model_secondary": self.config.judge_model_secondary,
@@ -614,6 +620,12 @@ class EvalRunner:
                                     "prompt_idx": prompt_idx, "sample_idx": sample_idx,
                                     "prompt": prompt.text, "system_prompt": condition.system_prompt,
                                     "completion": completion,
+                                    "request_settings": getattr(resp, "request_settings", {}),
+                                    "tokens_used": getattr(resp, "tokens_used", None),
+                                    "cost_usd": getattr(resp, "cost_usd", 0.0),
+                                    "billing_tokens": getattr(resp, "billing_tokens", None),
+                                    "usage_complete": getattr(resp, "usage_complete", False),
+                                    "usage_attempts": getattr(resp, "usage_attempts", []),
                                 }
                                 gen_f.write(json.dumps(generation) + "\n")
                                 gen_f.flush()

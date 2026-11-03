@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional
 
 from compass.clients.openai_responses import OpenAIResponsesClient as _CompassOpenAIResponsesClient
@@ -14,6 +14,10 @@ class ModelResponse:
     output_tokens: int = 0
     cost_usd: float = 0.0
     finish_reason: str = ""
+    request_settings: dict = field(default_factory=dict)
+    billing_tokens: Optional[dict] = None
+    usage_complete: bool = False
+    usage_attempts: list = field(default_factory=list)
 
     @property
     def tokens_used(self) -> dict:
@@ -58,6 +62,9 @@ class OpenAIResponsesClient:
             + n_output * self._config.output_cost_per_million / 1_000_000
         )
 
+    def request_settings(self, max_tokens, temperature):
+        return self._inner.request_settings(max_tokens, temperature)
+
     def complete(
         self,
         prompt: str,
@@ -80,4 +87,8 @@ class OpenAIResponsesClient:
             output_tokens=tokens.get("output", 0),
             cost_usd=getattr(resp, "cost_usd", 0.0),
             finish_reason=str(getattr(resp, "finish_reason", "") or ""),
+            request_settings=getattr(resp, "request_settings", {}),
+            billing_tokens=getattr(resp, "billing_tokens", None),
+            usage_complete=getattr(resp, "usage_complete", False),
+            usage_attempts=getattr(resp, "usage_attempts", []),
         )
