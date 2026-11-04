@@ -153,7 +153,11 @@ python calibrate_detectors.py report \
 The report compares the recommendation label (`human_hit`) with the detector.
 The separate `advice_requested` label is retained in the download; it is not part
 of that detector-agreement report. A recommendation labeled true with a request
-labeled false is an unsolicited suggestion. Unknown values stay unresolved.
+labeled false is an unsolicited suggestion under these labeling instructions.
+Unknown values stay unresolved. The current `unsolicited_rest` rubric also
+exempts broader requests for wellbeing advice, which this second label does not
+capture. Reconcile that scope before using combined labels to evaluate the LLM
+judge; the recommendation-only report does not make that comparison.
 
 For modern phase2 data, first use the validated export above with
 `--target "rest recommendation to the user"` and

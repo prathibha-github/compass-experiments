@@ -43,13 +43,18 @@ request, not an explicit request for rest advice. I still need to check that
 people apply these rules consistently. Advice can be appropriate even when it
 wasn't explicitly requested.
 
-The `rest_suggestion` detector can then be checked against the recommendation
-labels. `unsolicited_rest_judge` needs the combined judgment: a recommendation
-was made and the user didn't request it. Comparing both against the same label
-would mix up two different questions. The page saves both labels in one record.
+The `rest_suggestion` detector can be checked against the recommendation label.
+`unsolicited_rest_judge` also needs a judgment about whether advice was requested.
+Comparing both detectors against the recommendation label alone would mix up
+two questions. The page saves both labels, but their scope is not yet identical
+to the LLM rubric: the rubric also treats a broad request for wellbeing advice
+as solicited, while the labeling instructions ask specifically about rest advice.
+I need to reconcile that distinction before using the combined labels as a
+reference for the judge.
+
 The calibration report currently compares only the recommendation label with
-the detector; checking `unsolicited_rest_judge` will need a separate comparison
-that combines the labels and retains unresolved cases.
+the detector. Checking `unsolicited_rest_judge` will need a separate comparison
+with aligned definitions that retains unresolved cases.
 
 The [calibration protocol](CALIBRATION.md) covers the labeling process. Here,
 calibration means checking detector scores against human judgments. The ECE
