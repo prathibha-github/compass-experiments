@@ -22,10 +22,19 @@ against independent human labels.
 
 ## I need to check what the detectors are counting
 
-Mentioning rest, recommending it, and giving advice the user didn't request
-are different things. The current keyword detector can't reliably distinguish
-them. “Recovery” could refer to a database, and a response can discuss a rest
-suggestion without making one.
+The rest experiments use both phrase matching and an LLM judge. The
+`rest_suggestion` detector matches phrases such as “take a break,” while
+`unsolicited_rest_judge` uses the saved user request to assess whether the
+response offers rest advice the user didn't ask for. Its rubric already tells
+it to ignore incidental technical language. I still need human labels to check
+how well each detector measures its intended target.
+
+Phrase matches can count a quoted suggestion as advice. The separate
+`wellbeing_justification` and `principle_acknowledgment` heuristics can also
+match “recovery” in a database discussion. An LLM judge can distinguish those
+uses by meaning, but its accuracy needs to be measured rather than assumed.
+`rest_hypothesis` remains a heuristic-only suite; `rest_cai_validation`,
+`rest_offtask`, and `rest_intensity` include the LLM judge.
 
 The [labeling page](CALIBRATION.md#label-responses-in-a-browser) records whether
 a response recommends rest and whether the user explicitly asked for that
@@ -34,13 +43,18 @@ request, not an explicit request for rest advice. I still need to check that
 people apply these rules consistently. Advice can be appropriate even when it
 wasn't explicitly requested.
 
-The `rest_suggestion` detector can then be checked against the recommendation
-labels. `unsolicited_rest_judge` needs the combined judgment: a recommendation
-was made and the user didn't request it. Comparing both against the same label
-would mix up two different questions. The page saves both labels in one record.
+The `rest_suggestion` detector can be checked against the recommendation label.
+`unsolicited_rest_judge` also needs a judgment about whether advice was requested.
+Comparing both detectors against the recommendation label alone would mix up
+two questions. The page saves both labels, but their scope is not yet identical
+to the LLM rubric: the rubric also treats a broad request for wellbeing advice
+as solicited, while the labeling instructions ask specifically about rest advice.
+I need to reconcile that distinction before using the combined labels as a
+reference for the judge.
+
 The calibration report currently compares only the recommendation label with
-the detector; checking `unsolicited_rest_judge` will need a separate comparison
-that combines the labels and retains unresolved cases.
+the detector. Checking `unsolicited_rest_judge` will need a separate comparison
+with aligned definitions that retains unresolved cases.
 
 The [calibration protocol](CALIBRATION.md) covers the labeling process. Here,
 calibration means checking detector scores against human judgments. The ECE
@@ -53,11 +67,14 @@ Some of the original prompts mention fatigue or health. Even the instruction
 to ignore wellbeing uses wellbeing-related words. That makes it hard to tell
 whether the model is volunteering the topic or responding to cues I supplied.
 
-The next run should compare matched tasks with and without fatigue cues. I
-also want to compare task-only instructions that avoid the detector vocabulary
-with the original suppression wording, and include prompts that explicitly
-ask for rest advice. Those comparisons can help separate sensitivity to the
-wording from persistence across the tested instructions.
+Today's `rest_cai_validation` suite already includes matched tasks with and
+without fatigue cues and a `strict_task_only` condition that avoids rest and
+wellbeing vocabulary. `rest_intensity` varies fatigue cues around one task.
+Those definitions are ready to use; they do not change what was tested in the
+May 21 pilot. For the follow-up, I need to choose the task coverage, include
+explicit requests for rest advice as controls, and compare the task-only
+instruction with the original suppression wording. These comparisons can test
+sensitivity to the visible inputs without identifying a training mechanism.
 
 Asking the model why it suggested rest may produce a plausible explanation,
 but that explanation alone doesn't show what caused the response. Likewise,

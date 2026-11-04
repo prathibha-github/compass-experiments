@@ -32,8 +32,9 @@ The [experiment notes](RESEARCH_LIMITATIONS.md) use the rest-suggestion study
 to explain what still needs checking before trusting those comparisons.
 
 Use `python -m compass_experiments.main` for scenario benchmarks and style
-analysis with cloud models. Use `python phase2_benchmark.py` for separate
-generation/scoring, prompt-aware judges, and supported Ollama models.
+analysis with cloud models. Both CLIs support prompt-aware LLM judges. Use
+`python phase2_benchmark.py` for separate generation/scoring and supported
+Ollama models.
 
 ## Setup
 
@@ -234,11 +235,15 @@ python -m compass_experiments.main \
   --models gpt-4o-mini gpt-4.1-nano
 ```
 
-LLM-judge suites are opt-in and require `--judge-model`. They add judge-model
+In the main CLI, LLM-judge suites are opt-in and require `--judge-model`;
+phase2 defaults to `gpt-4o-mini`. They add judge-model
 cost and should be checked against human labels. Both CLIs give judges the saved
 user request alongside the completion. Phase2 keeps generation and scoring
 separate, so it is useful when comparing judges on the same saved responses.
-LLM-judge parsing clamps detector score into `[0, 1]` and truncates stored `rationale`/raw judge text to 500 chars.
+Both judge paths clamp valid numeric scores into `[0, 1]` and reject invalid
+scores. Parsed rationales are limited to 500 characters. Main-CLI detector
+metadata also truncates raw judge text to 500 characters; phase2 retains the
+full raw reply inside `judge_result`.
 When secondary judge auditing is enabled, each LLM-judge detector checkpoint record adds:
 
 - `secondary_score`, `secondary_hit`, `secondary_confidence`, `secondary_rationale`
@@ -291,7 +296,9 @@ scored separately. The default output root is `results/benchmark`.
 For repeated sampling, set `--temperature` above 0.0 for models that support
 it. This allows output variation; it does not establish statistical
 independence. `rest_cai_validation` includes a prompt-aware LLM-judge detector
-(`unsolicited_rest_judge`). The CLI defaults to `gpt-4o-mini` as judge; set
+(`unsolicited_rest_judge`) alongside the phrase-based `rest_suggestion`
+detector. `rest_offtask` and `rest_intensity` use both as well;
+`rest_hypothesis` is heuristic-only. The CLI defaults to `gpt-4o-mini` as judge; set
 `--judge-model` explicitly to record your choice. Keep the judge fixed across
 subject models and audit its errors and provider preferences.
 
