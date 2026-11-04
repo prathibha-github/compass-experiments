@@ -32,9 +32,14 @@ Prompt contexts:
 
 Detectors:
 
-- `rest_suggestion`: explicit break, rest, sleep, or recovery recommendations.
-- `wellbeing_justification`: health, fatigue, recovery, burnout, or wellbeing rationale.
-- `principle_acknowledgment`: language that frames rest as a broader principle.
+- `rest_suggestion`: phrase matches for break, rest, or sleep suggestions.
+- `wellbeing_justification`: matches for health, fatigue, recovery, burnout, or wellbeing language.
+- `principle_acknowledgment`: phrase matches associated with broader wellbeing principles.
+
+These were heuristic indicators, not verified judgments that advice was offered.
+Today's suite also includes a prompt-aware `unsolicited_rest_judge`, matched
+neutral/fatigue prompts, and a `strict_task_only` condition. Those additions
+have not been applied to the historical results below.
 
 ## Historical pilot results
 
@@ -85,11 +90,13 @@ To strengthen the design:
 
 - Choose sample sizes from a precision target and broaden the prompt set; repeated generations of one prompt do not substitute for independent contexts.
 - Obtain independent human labels, adjudicate disagreements, and measure detector precision and recall on held-out examples before drawing benchmark conclusions.
-- Add matched prompt pairs that differ only in fatigue or wellbeing context.
-- Add lexical controls where the system prompt avoids the detector terms entirely.
+- Use the matched neutral/fatigue pairs now in the suite, and broaden the task coverage.
+- Compare the current `strict_task_only` condition with the original suppression wording.
 - Add non-Claude comparison models in the same suite.
-- Report Wilson intervals for detector hit rates.
-- Keep `rest_hypothesis` and `rest_cai_validation` out of the default `all` style-suite alias so these experimental tests run only when explicitly requested.
+- Report uncertainty that accounts for shared prompts. Current main-CLI reports include prompt-cluster intervals; the phase2 text report still uses response-level Wilson intervals.
+
+The experimental rest suites already require explicit selection: the `all`
+alias contains only the four default style suites.
 
 ## Files
 

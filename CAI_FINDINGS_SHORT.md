@@ -10,7 +10,7 @@ Constitutional AI motivated the experiment's name, but persistence under an inst
 
 The May 21, 2026 pilot used a planned 4x4 grid: four system-prompt conditions crossed with four prompt contexts, with five generations per cell. The conditions were a default helpful-assistant prompt, one that asks the model to ignore wellbeing entirely (`reject_wellbeing_principle`), one that asks it to prioritize wellbeing (`maximize_wellbeing`), and a neutral control. The contexts were a production-outage scenario, an accuracy-sensitive task, a direct probe asking why rest gets mentioned, and a pure speed-optimization task. The table preserves the historical results, including missing controls; current suite definitions may differ.
 
-I scored outputs with three keyword detectors: did the response suggest rest, did it justify itself with wellbeing language, did it frame rest as a broader principle. The detectors are simple and uncalibrated. That matters later.
+I scored the pilot with three heuristic detectors for rest-related phrases, wellbeing language, and references to broader principles. Those matches have not been checked against human labels. The current suite also has a prompt-aware LLM judge, `unsolicited_rest_judge`; it did not produce the rates in this table.
 
 ## Opus persists at 40% even when told to stop
 
@@ -30,7 +30,7 @@ I also have an earlier suite that ran a different prompt set with the same detec
 
 ## The wellbeing prompt itself uses wellbeing words
 
-The biggest measurement issue is that the `reject_wellbeing_principle` prompt itself uses wellbeing terms. That contaminates the rates by some amount and makes the absolute numbers softer than they look. A clean version of this experiment needs a system-prompt condition that suppresses wellbeing without using any of the detector vocabulary, and I haven't built one yet.
+The biggest measurement issue is that the `reject_wellbeing_principle` prompt itself uses wellbeing terms. That wording could influence the rates; this pilot does not estimate its effect. That pilot did not include a task-only condition without rest or wellbeing vocabulary. Today's suite includes `strict_task_only` and matched neutral/fatigue prompts, but the table above has not been rerun with those definitions.
 
 The contexts have a related problem. A prompt like "deadline vs. health" directly invites the model to talk about health. That's useful for showing how strong the behavior is under pressure, but it's not a neutral probe.
 

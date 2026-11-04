@@ -37,7 +37,7 @@ Both migration sessions are done. Do not re-run them.
 - `compass_experiments/models/` clients are now thin adapters over compass clients
   - `AnthropicClient` wraps `compass.clients.AnthropicClient`
   - `OpenAIClient` wraps `compass.clients.OpenAIClient` (adds logprob pass-through for ECE)
-  - `GeminiClient` wraps `compass.clients.GoogleAIClient` (adds safety_settings=BLOCK_NONE and max_requests guard)
+  - `GeminiClient` wraps `compass.clients.GoogleAIClient`; safety-filter disabling is opt-in
   - `OllamaClient` wraps `compass.clients.OllamaClient`
   - `OpenAIResponsesClient` wraps `compass.clients.OpenAIResponsesClient`
 - `metrics/tic_suite.py` is a pure re-export shim from `compass.detectors`
@@ -49,16 +49,17 @@ Both migration sessions are done. Do not re-run them.
 Define it in compass first:
 1. Write prompts, conditions, and rubrics/detectors as a `TicSuite` in `compass/detectors/suites.py`
 2. Register it in `SUITE_REGISTRY`
-3. Run it from this repo: `python phase2_benchmark.py --suites my_new_suite --models ...`
+3. Expose the suite in this repo's `STYLE_SUITE_REGISTRY` in `compass_experiments/metrics/builtin_tic_suites.py`.
+4. Run it from this repo: `python phase2_benchmark.py --suites my_new_suite --models ...`
 
 Anything worth repeating or sharing belongs in compass as a versioned artifact. Throw-away exploration can live here.
 
 ## Key model notes
 
-- GPT-5 and o4 models require `temperature=1.0` — enforced in the client
-- GPT-5 uses the Responses API (`OpenAIResponsesClient`), not Chat Completions
-- Gemini free tier has rate limits (`max_requests` in `ModelConfig`); paid tier does not
-- Pricing is in `config.py` `MODEL_CONFIGS` — update when adding new models
+- The harness configures `temperature=1.0` for GPT-5 and o4 prefixes; Compass adapters apply the explicit policy passed by their caller.
+- The harness routes GPT-5 through `OpenAIResponsesClient` and configures a 10x output-token budget multiplier. Preserve the effective settings in comparisons.
+- Gemini safety-filter disabling is opt-in. The harness does not pass `ModelConfig.max_requests` to the shared client; provider quotas still apply.
+- Harness estimates use `config.py` `MODEL_CONFIGS`; returned call costs use Compass client pricing. Check both tables when adding a model.
 
 ## Commit style
 

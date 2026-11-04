@@ -70,7 +70,7 @@ Run `python phase2_benchmark.py --help` for the complete interface.
 | `--output-dir` | `results/benchmark` | Root containing a directory per suite |
 | `--max-tokens` | unset | Uniform requested generation token budget |
 | `--max-tokens-by-model` | unset | Explicit `MODEL=TOKENS` entries for every selected model |
-| `--disallow-mixed-token-budgets` | off | Reject unequal effective generation budgets |
+| `--disallow-mixed-token-budgets` | off | Reject unequal requested generation budgets |
 | `--auto-resume` | on | Reuse saved generations and completed detector scores |
 | `--resume` | off | Explicitly enable resume, even if `--no-auto-resume` is supplied |
 | `--no-auto-resume` | off | Reset generation and scoring for selected suites unless `--resume` is also set |
@@ -80,6 +80,9 @@ Run `python phase2_benchmark.py --help` for the complete interface.
 explicit budget, the runner uses 1,000 tokens by default and 2,000 for Gemini
 model prefixes. Estimates use local pricing tables and assumed token counts;
 actual usage, retries, and provider availability need to be checked separately.
+The mixed-budget check compares requested limits before provider-specific
+transformations. For example, the GPT-5 adapter expands the output limit.
+Inspect saved effective settings when comparing generation budgets.
 
 ## Output files
 
@@ -105,13 +108,18 @@ Generation records include the full completion, prompt text, model, suite,
 condition, sample index, token use, and generation-quality diagnostics such as
 `hit_token_cap` and `is_fragment`. Evaluation records contain one row per
 detector and sample, with `score`, `hit`, `count`, judge name, and copied
-quality fields. Completion excerpts and rationales in evaluation rows are
-truncated; retain the generation file for full outputs.
+quality fields. Top-level completion excerpts and rationales are truncated.
+The nested `judge_result` retains the full raw judge reply, recorded usage, and
+settings; its parsed rationale is capped at 500 characters. Retain the generation
+file for the full subject-model response.
 
 The text summary groups by model, suite, condition, and detector. It reports
 hit rates, Wilson intervals, and evaluated row counts. It does not automatically
-exclude quality-flagged generations or account for missing evaluations. Inspect
-quality fields and runtime failure logs before comparing rates.
+exclude quality-flagged generations or show planned coverage. The normal run
+path raises on failed generation or scoring and verifies manifests before
+returning completed rows. Resume failed phases before reporting, and inspect
+quality fields before comparing rates. The text formatter alone cannot verify
+that an arbitrary supplied row list is complete.
 
 ## Resume and rescoring
 
@@ -206,5 +214,5 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the repository boundary.
 Run the resume and CLI tests from the harness root:
 
 ```bash
-python -m pytest tests/test_phase2_benchmark.py tests/test_phase2_resume_semantics.py tests/test_cli_entrypoints.py -q
+python -m unittest tests.test_phase2_benchmark tests.test_phase2_resume_semantics tests.test_cli_entrypoints
 ```
