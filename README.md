@@ -48,14 +48,10 @@ Python 3.13).
 ```bash
 mkdir -p ~/dev_setup && cd ~/dev_setup
 git clone git@github.com:prathibha-github/compass.git
-git clone git@github.com:prathibha-github/helm-eval-lex-quirks.git compass-experiments
+git clone git@github.com:prathibha-github/compass-experiments.git
 cd ~/dev_setup/compass && git checkout main && git pull
 cd ~/dev_setup/compass-experiments && ./setup.sh
 ```
-
-The clone command uses the current GitHub URL and explicitly names the local
-directory `compass-experiments`. The GitHub repository rename is a separate
-step; setup does not depend on it.
 
 `setup.sh` creates `.venv`, installs `requirements-base.txt`, and installs compass
 editable (`pip install -e ../compass --no-deps`). Confirm the wiring:
@@ -81,8 +77,12 @@ the same layout.
 
 The project is named Compass Experiments; its Python package is
 `compass_experiments`. Update existing imports and saved commands to use the
-new package name. Neither a package rename nor a GitHub repository rename
-changes your local checkout's directory name.
+new package name. The GitHub repository is now `compass-experiments`; existing
+local checkout folders can keep their names. Update an older checkout's remote:
+
+```bash
+git remote set-url origin https://github.com/prathibha-github/compass-experiments.git
+```
 
 To install only third-party dependencies, use the following command. Running
 the harness still requires Compass to be installed separately.
