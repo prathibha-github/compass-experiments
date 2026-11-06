@@ -232,3 +232,39 @@ test('conflicting file import leaves both displayed labels and saved progress un
   assert.deepEqual(app.read('rows'),before);
   assert.equal(JSON.stringify([...app.storage]),saved);
 });
+
+test('save and next saves both answers and reuses the request without reviewing other responses',()=>{
+  const app=appSession();
+  app.radios.response[0].onchange(); app.radios.request[1].onchange();
+  app.elements.get('save-next').onclick();
+  const rows=app.read('rows');
+  assert.equal(rows[0].human_hit,true); assert.equal(rows[0].advice_requested,false);
+  assert.equal(rows[0].review_status,'labeled'); assert.equal(app.read('cursor'),1);
+  assert.equal(rows[1].request_label,'no'); assert.equal(rows[1].request_reviewed,true);
+  assert.equal(rows[1].human_hit,null); assert.equal(rows[1].review_status,'unreviewed');
+  app.radios.response[1].onchange(); app.elements.get('save-next').onclick();
+  assert.equal(app.read('rows[1].review_status'),'labeled');
+});
+
+test('save and next validates both answers before applying a shared request edit',()=>{
+  const app=appSession();
+  app.radios.request[1].onchange();
+  const before=app.read('rows'), saved=JSON.stringify([...app.storage]);
+  app.elements.get('save-next').onclick();
+  assert.deepEqual(app.read('rows'),before); assert.equal(JSON.stringify([...app.storage]),saved);
+  assert.equal(app.read('cursor'),0);
+  app.radios.response[0].onchange(); app.radios.request[2].onchange();
+  app.elements.get('save-next').onclick();
+  assert.match(app.elements.get('message').textContent,/short note/);
+  assert.equal(app.read('rows[0].request_reviewed'),false);
+});
+
+test('combined save still rejects a stale tab atomically',()=>{
+  const first=appSession();
+  first.radios.response[0].onchange(); first.radios.request[1].onchange();
+  const second=appSession(first.storage); second.radios.response[1].onchange();
+  const before=first.read('rows'), saved=JSON.stringify([...first.storage]);
+  first.elements.get('save-next').onclick();
+  assert.equal(first.read('conflict'),true); assert.deepEqual(first.read('rows'),before);
+  assert.equal(JSON.stringify([...first.storage]),saved);
+});

@@ -112,7 +112,7 @@ function changeResponse(patch) {
 document.querySelectorAll('input[name=response]').forEach(el=>el.onchange=()=>changeResponse({response_label:el.value}));
 $('notes').oninput=()=>changeResponse({notes:$('notes').value});
 function changeRequest(patch={}) {
-  apply(LabelingCore.editRequest(rows,rows[cursor].id,patch),'Request edit saved as a draft. Save the request answer to apply it to matching responses.');
+  apply(LabelingCore.editRequest(rows,rows[cursor].id,patch),'Request draft saved. Save & next unreviewed will save both answers and reuse the request answer.');
 }
 document.querySelectorAll('input[name=request]').forEach(el=>el.onchange=()=>changeRequest({label:el.value}));
 $('request-notes').oninput=()=>changeRequest({notes:$('request-notes').value});
@@ -124,7 +124,11 @@ $('save-request').onclick=()=> {
 };
 $('save-next').onclick=()=> {
   let candidate;
-  try { candidate=rows.map((row,index)=>index===cursor ? LabelingCore.commit(row) : row); }
+  try {
+    const withRequest=rows[cursor].request_draft
+      ? LabelingCore.saveRequest(rows,rows[cursor].id) : rows;
+    candidate=withRequest.map((row,index)=>index===cursor ? LabelingCore.commit(row) : row);
+  }
   catch(error) { $('message').textContent=error.message; return; }
   const next=nextUnreviewed(cursor,candidate);
   if(!persist(candidate,next ?? cursor)) { render(); return; }
