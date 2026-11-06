@@ -107,10 +107,15 @@ def task_fingerprint(task):
     fields = ("id", "prompt", "system_prompt", "completion", "annotation_target", "instructions", "instruction_version")
     if any(field not in task for field in fields):
         raise ValueError("Label file is missing its original task or instructions; export a new label set")
-    return fingerprint({field: task[field] for field in fields})
+    content = {field: task[field] for field in fields}
+    if "generation_quality" in task:
+        content["generation_quality"] = task["generation_quality"]
+    return fingerprint(content)
 
 
 def report_labels(keys, labels, *, annotator=None):
+    if any(row.get("request_draft") is not None for row in labels):
+        raise ValueError("Finish or cancel pending request edits before reporting labels")
     predictions, humans = index_rows(keys), index_rows(labels)
     if any("annotator" in row for row in labels):
         if (not isinstance(annotator, str) or not annotator.strip() or
@@ -135,6 +140,12 @@ def report_labels(keys, labels, *, annotator=None):
     report["source_coverage_verified"] = source_verified
     if not source_verified:
         report["status"] = "source_coverage_unverified"
+    sampling = [row.get("sampling") for row in keys]
+    if any(item is not None for item in sampling):
+        if any(item != sampling[0] for item in sampling):
+            raise ValueError("Inconsistent sampling metadata")
+        report["sampling"] = sampling[0]
+        report["sampling_note"] = "Descriptive agreement on a stratified development sample; not a population-weighted estimate."
     report["annotator"] = annotator
     report["labels_fingerprint"] = fingerprint(labels)
     report["key_fingerprint"] = fingerprint(keys)
