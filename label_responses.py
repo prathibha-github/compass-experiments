@@ -6,6 +6,7 @@ from pathlib import Path
 
 from compass.evaluation.contracts import fingerprint
 from calibrate_detectors import read_rows, index_rows, task_fingerprint
+from archived_labeling import archived_tasks, QUALITY_FIELDS
 
 ASSETS = Path(__file__).resolve().parent / "labeling"
 TASK_FIELDS = ("id", "annotation_target", "instructions", "instruction_version",
@@ -84,7 +85,14 @@ def render_page(tasks):
         for field in ("prompt", "system_prompt"):
             if task[field] is not None and not isinstance(task[field], str):
                 raise ValueError(f"Invalid task {field}")
-        safe_tasks.append({field: task[field] for field in TASK_FIELDS})
+        safe_task = {field: task[field] for field in TASK_FIELDS}
+        if "generation_quality" in task:
+            quality = task["generation_quality"]
+            if (not isinstance(quality, dict) or set(quality) != set(QUALITY_FIELDS)
+                    or any(value is not None and type(value) is not bool for value in quality.values())):
+                raise ValueError("Invalid generation quality flags")
+            safe_task["generation_quality"] = quality
+        safe_tasks.append(safe_task)
     bundle = dict(version=1, dataset_id=fingerprint(sorted(row["id"] for row in safe_tasks)), tasks=safe_tasks)
     # JSON is data, not markup. This also neutralizes a completion containing </script>.
     payload = json.dumps(bundle, ensure_ascii=True).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
@@ -110,6 +118,9 @@ def main():
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--labels", help="An untouched labels.jsonl from calibrate_detectors.py export")
     source.add_argument("--legacy-checkpoints", nargs="+", help="Legacy main-CLI rest checkpoints, for development only")
+    source.add_argument("--archived-generations", nargs="+", help="Uncontracted full phase2 generations, for development only")
+    parser.add_argument("--samples-per-cell", type=int, default=1)
+    parser.add_argument("--seed", default="rest-followups-v1")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--detector", default="rest_suggestion")
     parser.add_argument("--instructions", default=str(ASSETS / "rest_instructions.txt"))
@@ -118,8 +129,16 @@ def main():
     if args.labels:
         tasks, keys = read_rows(args.labels), None
         if any(task.get("human_hit") is not None or task.get("notes") or
+               task.get("advice_requested") is not None or task.get("request_reviewed") or
+               task.get("request_notes") or task.get("request_draft") is not None or
                task.get("review_status", "unreviewed") != "unreviewed" for task in tasks):
             raise ValueError("Build from untouched tasks, then import existing labels in the page")
+    elif args.archived_generations:
+        if args.detector != "rest_suggestion":
+            raise ValueError("Archived import supports only rest_suggestion")
+        tasks, keys = archived_tasks(args.archived_generations,
+            instructions=Path(args.instructions).read_text(), instruction_version=args.instruction_version,
+            samples_per_cell=args.samples_per_cell, seed=args.seed)
     else:
         tasks, keys = legacy_tasks(args.legacy_checkpoints, detector=args.detector,
             instructions=Path(args.instructions).read_text(), instruction_version=args.instruction_version)

@@ -117,7 +117,44 @@ text itself may still reveal a model or condition. Each annotator uses their
 own name; labels are saved in that browser. Download the JSONL backup at the end
 of a session. You can import it on another browser using the same annotator name.
 
-For the existing rest-condition checkpoints, create a development set:
+For the newer saved follow-ups, sample one response per model, prompt, and
+condition from each source:
+
+```bash
+python label_responses.py \
+  --archived-generations \
+    results/rest_offtask/rest_offtask/suite_generations.jsonl \
+    results/rest_intensity/rest_intensity/suite_generations.jsonl \
+    results/benchmark_pilot_gpt5_mini/rest_cai_validation/suite_generations.jsonl \
+  --samples-per-cell 1 --seed rest-followups-v1 \
+  --output-dir results/rest_labels_followups
+```
+
+These local archives yield 138 responses: 60 off-task, 50 fatigue-intensity,
+and 28 GPT-5-mini matched-prompt responses. They contain full responses and user
+requests but no saved system instructions or manifests. The original Claude
+matched-prompt archive has an empty generation file; its evaluation excerpts
+cannot supply the missing responses. Do not include it or the contaminated
+intensity backup.
+
+The importer validates every supplied generation before sampling. Selection is
+deterministic and independent of detector predictions; the private key records
+the seed, source counts, strata, and inclusion probabilities. It runs the current
+local `rest_suggestion` phrase detector on the saved responses and records its
+definition. It makes no model calls and does not reuse historical judge scores.
+This comparison checks the phrase detector, not the prompt-aware LLM judge.
+
+Keep truncated and flagged responses in the sample. The off-task and intensity
+archives used different token budgets across model versions, and many responses
+hit their limits. Saved quality flags appear on the page; missing flags remain
+unknown. Labels describe the visible response. These runs cannot support a fair
+model ranking or claims about compliance with missing system instructions.
+Treat this as annotation development; the report describes agreement on the
+sample without weighting it to the source population. Use new, held-out tasks
+with consistent generation settings for a later assessment.
+
+The older pilot remains available separately. To build a page from its
+rest-condition checkpoints:
 
 ```bash
 python label_responses.py \
@@ -126,8 +163,15 @@ python label_responses.py \
 ```
 
 Open `results/rest_labels_development/index.html`. Read the instructions before
-labeling. A saved `Cannot tell` answer needs a note. Draft answers remain
-unlabeled until you press **Save & next unreviewed**. Advice that was requested
+labeling. Answer the request question once per exact user request and instruction
+version. Save that answer to reuse it across responses, including its note when
+it is uncertain. Each response still needs its own recommendation label. Editing
+a saved request answer updates its matching responses; conflicting answers in an
+import are rejected. Missing requests are never grouped together.
+
+A saved `Cannot tell` answer needs a note. Draft answers remain unlabeled until
+you save them. Finish or cancel request edits before downloading labels for a
+report. The report rejects files with pending request edits. Advice that was requested
 still counts as a rest recommendation; the second question records whether it
 was requested. These labels do not establish compliance with missing system
 instructions or identify a training mechanism.
@@ -136,7 +180,12 @@ This legacy import retains every supplied row and its provenance, but cannot
 verify the original planned population. It rejects duplicate identities and
 contracted records rather than bypassing the modern export checks. It never
 fills missing context from current suites. Treat this first set as development
-data; use a separate prompt set for a later held-out assessment.
+data; use a separate prompt set for a later held-out assessment. Keep any labels
+discussed with an AI assistant marked as assisted development work. Independent
+human validation needs labels collected without those suggestions.
+
+Build the new page in a fresh directory. Existing pages and browser labels are
+not migrated automatically; download a backup from the old page before switching.
 
 The generated `private_key.jsonl` contains model identities and predictions.
 Keep it separate from the page you give annotators. The initial `labels.jsonl`
