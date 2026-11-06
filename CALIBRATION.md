@@ -165,8 +165,8 @@ python label_responses.py \
 Open `results/rest_labels_development/index.html`. Read the instructions before
 labeling. Answer the request question once per exact user request and instruction
 version. **Save & next unreviewed** saves both answers and reuses the request
-answer across matching responses, including its note when uncertain. You can
-also use **Save request answer** to save it separately. Each response still needs its own recommendation label. Editing
+answer across matching responses, including its note when uncertain. Each response
+still needs its own recommendation label. Editing
 a saved request answer updates its matching responses; conflicting answers in an
 import are rejected. Missing requests are never grouped together.
 
