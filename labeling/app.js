@@ -2,7 +2,7 @@
 const bundle = JSON.parse(document.getElementById('task-data').textContent);
 const $ = id => document.getElementById(id);
 let rows, annotator, cursor = 0, revision = null, storageKey, storageAvailable = true, conflict = false, needsBackup = false;
-const editable='input[type=radio],textarea,#save-next,#import,#save-request,#edit-request,#cancel-request';
+const editable='input[type=radio],textarea,#save-next,#import,#edit-request,#cancel-request';
 $('total-intro').textContent = `${bundle.tasks.length} responses. You can do a few at a time and return later.`;
 function warning(text) { $('storage-warning').hidden=false; $('storage-warning').textContent=text; }
 function stopForConflict() {
@@ -118,10 +118,6 @@ document.querySelectorAll('input[name=request]').forEach(el=>el.onchange=()=>cha
 $('request-notes').oninput=()=>changeRequest({notes:$('request-notes').value});
 $('edit-request').onclick=()=>changeRequest();
 $('cancel-request').onclick=()=>apply(LabelingCore.cancelRequest(rows,rows[cursor].id),'Request edit canceled. The saved answer is unchanged.');
-$('save-request').onclick=()=> {
-  try { apply(LabelingCore.saveRequest(rows,rows[cursor].id),'Request answer saved for every matching response. Read and label each response separately.'); }
-  catch(error) { $('message').textContent=error.message; }
-};
 $('save-next').onclick=()=> {
   let candidate;
   try {

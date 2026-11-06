@@ -182,7 +182,8 @@ function appSession(storage=new Map()) {
 
 test('another tab saving first blocks a shared edit without changing either copy',()=>{
   const first=appSession();
-  first.radios.request[1].onchange(); first.elements.get('save-request').onclick();
+  first.radios.request[1].onchange(); first.radios.response[0].onchange();
+  first.elements.get('save-next').onclick();
   const second=appSession(first.storage);
   second.radios.response[0].onchange();
   const saved=JSON.stringify([...first.storage]), before=first.read('rows');
@@ -190,7 +191,7 @@ test('another tab saving first blocks a shared edit without changing either copy
   assert.equal(first.read('conflict'),true);
   assert.deepEqual(first.read('rows'),before);
   assert.equal(JSON.stringify([...first.storage]),saved);
-  assert.equal(first.elements.get('save-request').disabled,true);
+  assert.equal(first.elements.get('save-next').disabled,true);
 });
 
 test('import checks storage revision before replacing the current in-memory labels',async()=>{
